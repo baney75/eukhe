@@ -427,6 +427,13 @@ pub struct AgentConnectionState {
     /// `unknown_effects_update` payload), oldest first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unknown_effects: Vec<crate::effects::UnknownEffect>,
+    /// The ledger of waiting irreversible effects (the
+    /// `waiting_effects_update` payload), oldest first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub waiting_effects: Vec<crate::effects::WaitingEffect>,
+    /// When an irreversible effect is asked about (`approvals.mode`).
+    #[serde(default)]
+    pub approval_mode: crate::effects::ApprovalMode,
     /// The session's `/loop` (off without one).
     #[serde(default)]
     pub r#loop: crate::loop_mode::LoopStatus,

@@ -189,6 +189,7 @@ pub fn extension(deps: &Arc<HostDeps>) -> Arc<Extension> {
     remote::register(&runtime);
     query::register(&runtime);
     history::register(&runtime);
+    super::mcp_gate::register(&runtime.deps);
     let refine_allowed = boundary::register(&runtime);
     let service_runtime = Arc::clone(&runtime);
     // A kernel that cannot start (its Python could not be fetched) is

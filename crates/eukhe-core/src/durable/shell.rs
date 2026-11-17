@@ -1,12 +1,13 @@
 //! `eukhe.shell`: the `bash` tool (`bash@1`). It runs
 //! a script in process ([`eukhe_shell::Shell`]) in the agent's working
 //! directory. A step whose effects are all in the auto set (the
-//! `shell.autoEffects` setting, default every effect) runs unasked; every
-//! other step runs only when the user approves it through the session's
-//! [`ShellApprovalSink`] (the daemon asks the attached client). A denial,
-//! no answer, or the refusal of a session that runs only from the phone
-//! gateway stops the script at that step, and the
-//! model reads it as a [`RefusalText`].
+//! `shell.autoEffects` setting, default `read`, `write`, `exec`) runs
+//! unasked; any other step is irreversible: it waits for the user's
+//! approval after the run, recorded in the ledger
+//! ([`super::waiting::Recorder`]), and the model reads where it waits.
+//! Watching (`approvals.mode` `watch`), the session's
+//! [`ShellApprovalSink`] asks the attached client: a yes runs it, a no
+//! refuses it ([`RefusalText::DENIED`]), no answer leaves it waiting.
 //!
 //! The tool obeys the S2 limits. Its output streams through one
 //! [`BoundedOutput`] under the call's [`Truncation`](eukhe_durable::harness::Truncation):
@@ -41,7 +42,8 @@ use eukhe_durable::harness::types::{
     ToolExecutionResult, ToolRegistration, ToolReplay,
 };
 use eukhe_durable::session::{SessionError, SessionResult};
-use eukhe_shell::{Answer, Approval, Approver, Ask, End, Ran, Refusal, Shell, Sink, Stream};
+use eukhe_shell::{Answer, Approval, Approver, Ask, End, Ran, Shell, Sink, Stream};
+use eukhe_types::effects::{WaitingAt, WaitingKind};
 use eukhe_types::job::{CellStatus, JobId};
 use eukhe_types::pi_ai::{JsonValue as PiJsonValue, TextContent, UserContentBlock};
 use eukhe_types::shell::{AutoSet, ShellAnswer, ShellApprovalRequest, ShellEffect};
@@ -50,6 +52,7 @@ use super::bounded_output::BoundedOutput;
 use super::deps::ShellApprovalSink;
 use super::jobs::{self, Job, JobEvent, JobKind, JobResult, JobSpec, Wait};
 use super::rlm::{aborted, call_aborted, session_env, with_diagnostics};
+use super::waiting::{Held, Recorder};
 use super::HostDeps;
 use crate::child_workspace::{ChildWorkspace, TreeStamp};
 use crate::kernel::manager::local_env;
@@ -73,14 +76,15 @@ const VERSION: &str = "bash@1";
 
 const DESCRIPTION: &str = "Run a bash script in the cwd. Steps: simple commands joined by `;`, \
 newlines, `&&`, `||`, `|`, with redirections. Each step's effects (read, write, exec, net, \
-outside, protected, secret) gate on the user's `shell.autoEffects`: allowed ones run at once, \
-others wait for approval; a denial stops the script. `git` commands that can run repo programs \
-(status, diff, commit, ...) count as exec. cat, ls, head, tail, wc, echo, pwd, mkdir, rm, rmdir, \
-touch, cp, mv, grep run in process; control flow, functions, subshells or `$(...)` run the whole \
-script in bash as one exec step. A file you will edit: `read` it, since `edit` needs the \
-`[path#TAG]` header `cat` does not print. No API keys or tokens in the environment. The result \
-lists each step's exit status; output is bounded. A script outliving the blocking budget \
-continues as a job; its end arrives as a `[job-settled]` message.";
+outside, protected, secret) gate on the user's `shell.autoEffects` (default read, write, exec): \
+allowed ones run at once; any other step (a push, a publish, a deploy, a write outside the \
+workspace) waits for the user's approval after the run, and the steps after it do not run. `git` \
+commands that can run repo programs (status, diff, commit, ...) count as exec. cat, ls, head, \
+tail, wc, echo, pwd, mkdir, rm, rmdir, touch, cp, mv, grep run in process; control flow, \
+functions, subshells or `$(...)` run the whole script in bash as one exec step. A file you will \
+edit: `read` it, since `edit` needs the `[path#TAG]` header `cat` does not print. No API keys or \
+tokens in the environment. The result lists each step's exit status; output is bounded. A script \
+outliving the blocking budget continues as a job; its end arrives as a `[job-settled]` message.";
 
 /// Asks through the session's sink; each question's id is the tool
 /// call's id (or a host request's) and the step.
@@ -110,7 +114,7 @@ impl Approver for SinkApprover {
 }
 
 /// A refusal of the approval gate as the model reads it, for every runner
-/// the gate covers (a `bash` step, an `python` cell, a document tool's
+/// the gate covers (a `bash` step, a `python` cell, a document tool's
 /// access): what failed and the step the model takes next, rendered as
 /// `<what failed>. <next step>.`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -120,29 +124,11 @@ pub(crate) struct RefusalText {
 }
 
 impl RefusalText {
-    pub(crate) fn of(refusal: Refusal) -> Self {
-        match refusal {
-            Refusal::Denied => Self {
-                what: "the user denied it",
-                next: "Do not try it again unless the user asks for it",
-            },
-            Refusal::Unanswered => Self {
-                what: "not approved: it needs the user's approval, and no client answered",
-                next:
-                    "Ask the user to attach a client, or to allow its effect in shell.autoEffects \
-if that is read, write, exec, net, outside, protected or secret; or use read-only steps",
-            },
-        }
-    }
-
-    /// The refusal of an approval answer that is not a yes.
-    pub(crate) fn of_answer(answer: ShellAnswer) -> Option<Self> {
-        match answer {
-            ShellAnswer::Approve => None,
-            ShellAnswer::Deny => Some(Self::of(Refusal::Denied)),
-            ShellAnswer::Unanswered => Some(Self::of(Refusal::Unanswered)),
-        }
-    }
+    /// The user said no while watching.
+    pub(crate) const DENIED: Self = Self {
+        what: "the user denied it",
+        next: "Do not try it again unless the user asks for it",
+    };
 }
 
 impl std::fmt::Display for RefusalText {
@@ -347,12 +333,16 @@ async fn execute(
     let workspace = cwd.clone();
     let mut running = {
         let (auto, env) = (auto_set(&deps.settings), local_env(&session_env(deps)));
+        let mode = deps.settings.manager().get_approval_mode();
         let paths = super::path_policy::session_policy(&deps.agent_dir, &deps.settings, &cwd);
         let (script, transcript) = (script.to_owned(), Arc::clone(&transcript));
+        let recorder = Recorder::of(deps);
         tokio::spawn(async move {
-            Shell::new(cwd, env, "bash")
-                .run(&script, auto, &paths, &approver, &*transcript)
-                .await
+            let ran = Shell::new(cwd, env, "bash")
+                .run(&script, auto, mode, &paths, &approver, &*transcript)
+                .await;
+            let kept = keep(&ran, &recorder).await;
+            (ran, kept)
         })
     };
     let mut abort_unless_detached = AbortUnlessDetached(Some(running.abort_handle()));
@@ -362,7 +352,7 @@ async fn execute(
             return Err(aborted(cx).unwrap_or_else(|| SessionError::error("aborted")));
         }
     };
-    let ran = match waited {
+    let (ran, kept) = match waited {
         Wait::Settled(Ok(ran)) => ran,
         Wait::Settled(Err(error)) => {
             return Err(SessionError::error(format!(
@@ -405,8 +395,8 @@ async fn execute(
             let settled_id = id.clone();
             tokio::spawn(async move {
                 let (status, event) = match running.await {
-                    Ok(ran) => {
-                        let (status, code) = settle(&ran, &transcript);
+                    Ok((ran, kept)) => {
+                        let (status, code) = settle(&ran, &kept, &transcript);
                         (status, JobEvent::Exited(i64::from(code)))
                     }
                     Err(error) if error.is_cancelled() => {
@@ -435,8 +425,15 @@ async fn execute(
             return Ok(detached_result(&id, budget, partial, bounded));
         }
     };
-    let refused = matches!(ran.end, End::Refused { .. });
-    settle(&ran, &transcript);
+    settle(&ran, &kept, &transcript);
+    // A refused step, or one the ledger could not record, is an error; a
+    // step recorded waiting is where the script stands.
+    let stopped = match (&ran.end, &kept) {
+        (End::Refused { .. }, _) | (End::Waits { .. }, Kept::NoWait | Kept::Unrecorded(_)) => true,
+        (End::Finished { .. } | End::Exited { .. }, _) | (End::Waits { .. }, Kept::Recorded(_)) => {
+            false
+        }
+    };
     let (text, bounded) = transcript.projection();
     let steps: Vec<serde_json::Value> = ran
         .steps
@@ -454,40 +451,96 @@ async fn execute(
             })
         })
         .collect();
-    let end = match &ran.end {
-        End::Finished { status } => serde_json::json!({ "kind": "finished", "status": status }),
-        End::Exited { status } => serde_json::json!({ "kind": "exited", "status": status }),
-        End::Refused {
-            step,
-            command,
-            effects,
-            refusal,
-        } => serde_json::json!({
+    let end = match (&ran.end, &kept) {
+        (End::Finished { status }, _) => {
+            serde_json::json!({ "kind": "finished", "status": status })
+        }
+        (End::Exited { status }, _) => serde_json::json!({ "kind": "exited", "status": status }),
+        (
+            End::Refused {
+                step,
+                command,
+                effects,
+            },
+            _,
+        ) => serde_json::json!({
             "kind": "refused",
             "step": step,
             "command": command,
             "effects": effects,
-            "refusal": match refusal {
-                Refusal::Denied => "denied",
-                Refusal::Unanswered => "unanswered",
+        }),
+        (
+            End::Waits {
+                step,
+                command,
+                effects,
+                ..
+            },
+            kept,
+        ) => serde_json::json!({
+            "kind": "waits",
+            "step": step,
+            "command": command,
+            "effects": effects,
+            "waiting": match kept {
+                Kept::Recorded(effect) => Some(effect.id.as_str()),
+                Kept::NoWait | Kept::Unrecorded(_) => None,
             },
         }),
     };
     let details = serde_json::json!({ "version": VERSION, "steps": steps, "end": end });
     Ok(ToolExecutionResult {
         output: Some(vec![UserContentBlock::Text(TextContent::new(text))]),
-        is_error: Some(refused),
+        is_error: Some(stopped),
         details: Some(JsonValue::from(details)),
         diagnostics: bounded.map(|diagnostic| vec![diagnostic]),
         ..ToolExecutionResult::default()
     })
 }
 
-/// Write how the script ended to its transcript: its job status and exit
-/// code (a refused step: 1).
-fn settle(ran: &Ran, transcript: &Transcript) -> (CellStatus, i32) {
+/// What the ledger kept of a script's end.
+enum Kept {
+    /// No step waits.
+    NoWait,
+    /// The step that waits, as recorded.
+    Recorded(Box<eukhe_types::effects::WaitingEffect>),
+    /// The step waits, but the ledger could not record it: why.
+    Unrecorded(String),
+}
+
+/// Record the step a script ended waiting at: it re-runs as its command in
+/// the cwd it would have run in.
+async fn keep(ran: &Ran, recorder: &Recorder) -> Kept {
     match &ran.end {
-        End::Finished { status } | End::Exited { status } => (
+        End::Waits {
+            command,
+            effects,
+            cwd,
+            ..
+        } => {
+            let held = Held {
+                kind: WaitingKind::ShellStep,
+                command: command.clone(),
+                cwd: cwd.display().to_string(),
+                effects: *effects,
+                payload: serde_json::json!({ "command": command, "cwd": cwd }),
+            };
+            match recorder.record(held).await {
+                Ok(effect) => Kept::Recorded(Box::new(effect)),
+                Err(error) => Kept::Unrecorded(error),
+            }
+        }
+        End::Finished { .. } | End::Exited { .. } | End::Refused { .. } => Kept::NoWait,
+    }
+}
+
+/// Write how the script ended to its transcript: its job status and exit
+/// code (a refused step, or one the ledger could not record: 1; a step
+/// recorded waiting ends the script as it stands).
+fn settle(ran: &Ran, kept: &Kept, transcript: &Transcript) -> (CellStatus, i32) {
+    let line = |text: String| transcript.push(&format!("{text}\n"), true);
+    match (&ran.end, kept) {
+        (End::Finished { status } | End::Exited { status }, _) => (
             if *status == 0 {
                 CellStatus::Ok
             } else {
@@ -495,20 +548,43 @@ fn settle(ran: &Ran, transcript: &Transcript) -> (CellStatus, i32) {
             },
             *status,
         ),
-        End::Refused {
-            step,
-            command,
-            effects,
-            refusal,
-        } => {
-            transcript.push(
-                &format!(
-                    "[stopped at step {step} ({}): `{command}` and the steps after it did not run: {}]\n",
-                    effects.names(),
-                    RefusalText::of(*refusal)
-                ),
-                true,
-            );
+        (
+            End::Refused {
+                step,
+                command,
+                effects,
+            },
+            _,
+        ) => {
+            line(format!(
+                "[stopped at step {step} ({}): `{command}` and the steps after it did not run: {}]",
+                effects.names(),
+                RefusalText::DENIED
+            ));
+            (CellStatus::Error, 1)
+        }
+        (End::Waits { step, .. }, Kept::Recorded(effect)) => {
+            line(effect.waiting_text(WaitingAt::Step(*step)));
+            (CellStatus::Ok, 0)
+        }
+        (
+            End::Waits {
+                step,
+                command,
+                effects,
+                ..
+            },
+            Kept::Unrecorded(_) | Kept::NoWait,
+        ) => {
+            let why = match kept {
+                Kept::Unrecorded(error) => error.as_str(),
+                Kept::NoWait | Kept::Recorded(_) => "nothing recorded it",
+            };
+            line(format!(
+                "[stopped at step {step} ({}): `{command}` needs the user's approval and could not \
+                 be recorded waiting ({why}); it and the steps after it did not run]",
+                effects.names()
+            ));
             (CellStatus::Error, 1)
         }
     }
@@ -528,8 +604,8 @@ fn detached_result(
         severity: ToolDiagnosticSeverity::Info,
         code: Some("detached".to_owned()),
         message: format!(
-            "The script outlived the {budget_ms} ms blocking budget and continues as job {job}; a \
-             step that needs approval still asks the user. Its result arrives on its own as a \
+            "The script outlived the {budget_ms} ms blocking budget and continues as job {job}; an \
+             irreversible step still waits for the user's approval. Its result arrives on its own as a \
              [job-settled job:{job}] message: never poll. Do the work that does not need this \
              result and edits no file it reads (a check judges only the tree it ran on); \
              `await jobs.wait(\"{job}\")` only when nothing else can proceed."

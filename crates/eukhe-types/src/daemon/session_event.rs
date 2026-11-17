@@ -11,7 +11,7 @@ use super::{MemoryUpdate, SessionActionSnapshot};
 use crate::acceptance::AcceptanceState;
 use crate::ai::{ServiceTier, UserContentBlock};
 use crate::budget::BudgetReport;
-use crate::effects::UnknownEffect;
+use crate::effects::{UnknownEffect, WaitingEffect};
 use crate::goal::GoalState;
 use crate::loop_mode::LoopStatus;
 use crate::output::OmittedOutput;
@@ -154,6 +154,16 @@ pub enum SessionEvent {
     UnknownEffectsUpdate {
         effects: Vec<UnknownEffect>,
     },
+    /// The session's ledger of waiting irreversible effects changed (one
+    /// recorded, run, refused): the whole ledger, oldest first.
+    WaitingEffectsUpdate {
+        effects: Vec<WaitingEffect>,
+    },
+    /// A root run ended (after its `agent_end`) leaving effects waiting:
+    /// the ones that wait, oldest first.
+    RunWaiting {
+        effects: Vec<WaitingEffect>,
+    },
     /// The session's `/loop` changed: its whole status.
     LoopUpdate {
         r#loop: LoopStatus,
@@ -252,6 +262,8 @@ impl SessionEvent {
             | Self::SessionActionUpdate { .. }
             | Self::GoalUpdate { .. }
             | Self::UnknownEffectsUpdate { .. }
+            | Self::WaitingEffectsUpdate { .. }
+            | Self::RunWaiting { .. }
             | Self::LoopUpdate { .. }
             | Self::BudgetUpdate { .. }
             | Self::PlanUsage { .. }
@@ -426,6 +438,15 @@ mod tests {
         rt::<SessionEvent>(
             r#"{"type":"bash_end","exitCode":null,"cancelled":true,"output":"tail","omitted":{"bytes":10,"lines":2,"at":"start"},"artifact":"/tmp/out","transient":true,"runId":"r"}"#,
         );
+    }
+
+    #[test]
+    fn waiting_effect_events_roundtrip() {
+        let effect = r#"{"id":"w1","kind":"shellStep","command":"git push","cwd":"/w","effects":["net"],"sessionId":"s1","askedAtMs":5,"status":"waiting","payload":{"script":"git push"}}"#;
+        rt::<SessionEvent>(&format!(
+            r#"{{"type":"waiting_effects_update","effects":[{effect}]}}"#
+        ));
+        rt::<SessionEvent>(&format!(r#"{{"type":"run_waiting","effects":[{effect}]}}"#));
     }
 
     #[test]

@@ -28,6 +28,7 @@ use tokio::task::JoinError;
 use super::contract::{EditArgs, Function, GlobArgs, GrepArgs, ReadArgs, WriteArgs};
 use super::probe::ProbeWitness;
 use super::{urls, DocumentsHost};
+use crate::durable::path_policy::{Allowed, Rerun};
 use crate::durable::{HostCall, HostRequestRegistry};
 
 /// Every request carries the kernel's working directory, so relative paths
@@ -644,6 +645,9 @@ pub(super) enum Caller {
     /// A kernel `fs.*` request, from inside the tool call it runs in (if
     /// any); nothing records its writes.
     Kernel(Option<Arc<dyn ToolExecutionApi>>),
+    /// The user's `/approve` of an access that waited: that one path is
+    /// allowed; nothing records its writes.
+    Approved(PathBuf),
 }
 
 /// Run one call whose arguments are already in the function's dialect,
@@ -662,11 +666,21 @@ pub(super) async fn perform(
     caller: Caller,
     cx: &Context,
 ) -> Result<Result<Performed, Rejection>, JoinError> {
-    let (api, witness): (_, Box<dyn Witness + Send>) = match caller {
-        Caller::Tool(api) => (Some(Arc::clone(&api)), Box::new(ProbeWitness::new(api, cx))),
-        Caller::Kernel(api) => (api, Box::new(Unwitnessed)),
+    let (api, witness, allowed): (_, Box<dyn Witness + Send>, _) = match caller {
+        Caller::Tool(api) => (
+            Some(Arc::clone(&api)),
+            Box::new(ProbeWitness::new(api, cx)),
+            Allowed::Gated,
+        ),
+        Caller::Kernel(api) => (api, Box::new(Unwitnessed), Allowed::Gated),
+        Caller::Approved(path) => (None, Box::new(Unwitnessed), Allowed::Approved(path)),
     };
-    let gate = host.gate(workspace, api.as_deref());
+    let rerun = Rerun {
+        function: function.name(),
+        cwd: cwd.clone(),
+        args: Value::Object(args.clone()),
+    };
+    let gate = host.gate(workspace, api.as_deref(), rerun, allowed);
     let url = match function {
         Function::Read => args
             .get("path")

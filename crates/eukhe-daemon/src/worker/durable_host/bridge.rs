@@ -5,7 +5,10 @@
 //! `session_action_update` (with the queued inputs' previews read from the
 //! `pi.inbox` document), goal document changes become `goal_update`,
 //! loop document changes become `loop_update`, changes of the
-//! `eukhe.effects` ledger become `unknown_effects_update`, and main's
+//! `eukhe.effects` ledger become `unknown_effects_update` and
+//! `waiting_effects_update` (the waiting list lives in the root
+//! conversation's ledger), a root session's run end that leaves effects
+//! waiting becomes `run_waiting` after its `agent_end`, and main's
 //! workers and the session's run pause land on the view (summary
 //! `workers`, `isPaused`).
 
@@ -19,7 +22,9 @@ use eukhe_chord::json::{from_json, JsonValue};
 use eukhe_chord::AttachedReplicatedState;
 use eukhe_core::durable::children::{watch_workers, RunPause};
 use eukhe_core::durable::{ProviderWireEvent, SessionShape};
-use eukhe_durable::harness::effects::watch_unknown_effects;
+use eukhe_durable::harness::effects::{
+    read_waiting_effects, watch_unknown_effects, watch_waiting_effects,
+};
 use eukhe_durable::harness::types::{
     ConversationAbortOptions, InputEntry, InputSubmissionDraft, WhenBusy,
 };
@@ -30,7 +35,7 @@ use eukhe_durable::harness::{
 use eukhe_durable::session::{SessionError, SessionResult, WatchListenerError};
 use eukhe_durable::types::{ConversationId, DocumentReaderExt, SubmissionId};
 use eukhe_types::daemon::{SessionEvent, SessionWorker};
-use eukhe_types::effects::UnknownEffect;
+use eukhe_types::effects::{UnknownEffect, WaitingEffect};
 use eukhe_types::input_origin::InputOrigin;
 use eukhe_types::loop_mode::LoopStatus;
 use eukhe_types::pi_ai::{UserContent, UserContentBlock};
@@ -97,6 +102,9 @@ pub(crate) struct ShownView {
     /// The ledger of effects whose outcome a restart could not tell
     /// (`unknown_effects_update` payload), oldest first.
     pub(crate) unknown_effects: Vec<UnknownEffect>,
+    /// The ledger of irreversible effects waiting for the user's approval
+    /// (`waiting_effects_update` payload), every status, oldest first.
+    pub(crate) waiting_effects: Vec<WaitingEffect>,
     /// The served loop (`loop_update` payload); `None` until the loop
     /// watch read it.
     pub(crate) loop_status: Option<LoopStatus>,
@@ -198,7 +206,8 @@ impl EventBridge {
 
     /// Attach to `conversation`'s events and durable view, install both on
     /// the core, and start the listener, the flush timer, the goal watch,
-    /// the loop watch, the workers and pause watch, and the provider
+    /// the loop watch, the waiting ledger watch (of `ledger`, the root
+    /// conversation), the workers and pause watch, and the provider
     /// failover relay.
     ///
     /// # Errors
@@ -207,6 +216,7 @@ impl EventBridge {
     pub(crate) async fn start(
         harness: &Harness,
         conversation: &Conversation,
+        ledger: ConversationId,
         provider_events: Option<tokio::sync::broadcast::Receiver<ProviderWireEvent>>,
         retry_policy: RetryPolicySource,
         shape: ShapeWatch,
@@ -237,6 +247,7 @@ impl EventBridge {
                 active: None,
                 goal: Value::Null,
                 unknown_effects: Vec::new(),
+                waiting_effects: Vec::new(),
                 loop_status: None,
                 acceptance: Value::Null,
                 workers: Vec::new(),
@@ -254,7 +265,7 @@ impl EventBridge {
         bridge.stream.start(listener(
             harness.clone(),
             epoch,
-            conversation_id,
+            (conversation_id, ledger),
             sink.clone(),
         ))?;
         bridge
@@ -271,6 +282,13 @@ impl EventBridge {
             harness.clone(),
             epoch,
             conversation_id,
+            sink.clone(),
+            cx.clone(),
+        )));
+        bridge.tasks.push(tokio::spawn(waiting_loop(
+            harness.clone(),
+            epoch,
+            ledger,
             sink.clone(),
             cx.clone(),
         )));
@@ -317,7 +335,7 @@ impl EventBridge {
 fn listener(
     harness: Harness,
     epoch: u64,
-    conversation_id: ConversationId,
+    (conversation_id, ledger): (ConversationId, ConversationId),
     sink: BridgeSink,
 ) -> eukhe_durable::harness::AgentEventListener {
     Arc::new(move |batch: AgentEventBatch, cx: Context| {
@@ -338,11 +356,54 @@ fn listener(
             } else {
                 None
             };
-            apply_batch(&sink, epoch, &batch, inbox);
+            if apply_batch(&sink, epoch, &batch, inbox) {
+                run_waiting(&harness, epoch, ledger, &sink, &cx).await;
+            }
             Ok::<(), WatchListenerError>(())
         }
         .boxed()
     })
+}
+
+/// After a root session's run ended (its `agent_end` is out): the effects
+/// still waiting, as one `run_waiting`; nothing when none waits. A
+/// subagent's waiting effects are in its root session's ledger.
+async fn run_waiting(
+    harness: &Harness,
+    epoch: u64,
+    ledger: ConversationId,
+    sink: &BridgeSink,
+    cx: &Context,
+) {
+    let effects = match read_waiting_effects(harness, ledger, cx).await {
+        Ok(effects) => effects,
+        Err(error) => {
+            eprintln!(
+                "eukhe-daemon worker: reading the waiting effects at the run's end failed: {error}"
+            );
+            return;
+        }
+    };
+    let waiting = match eukhe_durable::harness::effects::still_waiting(&effects) {
+        Ok(waiting) => waiting,
+        Err(error) => {
+            eprintln!("eukhe-daemon worker: the waiting effects at the run's end: {error}");
+            return;
+        }
+    };
+    if waiting.is_empty() {
+        return;
+    }
+    let mut core = lock(&sink.core);
+    let root = core.parent_session_id.is_none() && core.parent_active_session_id.is_none();
+    if !root || core.view.as_ref().is_none_or(|view| view.epoch != epoch) {
+        return;
+    }
+    crate::worker::emit_event_locked(
+        &mut core,
+        &sink.events,
+        SessionEvent::RunWaiting { effects: waiting },
+    );
 }
 
 /// Translate one batch into wire events under the core lock. The queue
@@ -350,18 +411,18 @@ fn listener(
 /// projection (its rows gone from the lanes, the action `preparing`) goes
 /// out right before the delivered run's first frame, every later phase
 /// change right after the frame that moved it, and whatever else changed
-/// projects after the batch.
+/// projects after the batch. Answers whether a run ended in the batch.
 fn apply_batch(
     sink: &BridgeSink,
     epoch: u64,
     batch: &[AgentEvent],
     inbox: Option<Vec<QueuedInput>>,
-) {
+) -> bool {
     let changes = {
         let mut core = lock(&sink.core);
         let (steps, changes) = {
             let Some(view) = core.view.as_mut().filter(|view| view.epoch == epoch) else {
-                return;
+                return false;
             };
             let frames = view.translator.translate_batch(batch);
             // An inbox read answers what this batch picked up: the rows
@@ -398,9 +459,13 @@ fn apply_batch(
         }
         changes
     };
+    let ended = changes
+        .iter()
+        .any(|change| matches!(change, RunChange::Ended { .. }));
     for change in changes {
         (sink.on_run)(change);
     }
+    ended
 }
 
 /// One step of a batch's emission ([`plan_batch`]).
@@ -560,6 +625,8 @@ fn run_changes(frames: &[SessionEvent]) -> Vec<RunChange> {
             | SessionEvent::SessionActionUpdate { .. }
             | SessionEvent::GoalUpdate { .. }
             | SessionEvent::UnknownEffectsUpdate { .. }
+            | SessionEvent::WaitingEffectsUpdate { .. }
+            | SessionEvent::RunWaiting { .. }
             | SessionEvent::LoopUpdate { .. }
             | SessionEvent::BudgetUpdate { .. }
             | SessionEvent::PlanUsage { .. }
@@ -654,6 +721,40 @@ async fn effects_loop(
             &mut core,
             &sink.events,
             SessionEvent::UnknownEffectsUpdate { effects },
+        );
+    }
+}
+
+/// The waiting list of the ledger of `ledger` (the root conversation)
+/// onto the view, each change announced as `waiting_effects_update` (an
+/// empty list at the start announces nothing).
+async fn waiting_loop(
+    harness: Harness,
+    epoch: u64,
+    ledger: ConversationId,
+    sink: BridgeSink,
+    cx: Context,
+) {
+    let mut updates = match watch_waiting_effects(&harness, ledger, &cx) {
+        Ok(updates) => updates,
+        Err(error) => {
+            eprintln!("eukhe-daemon worker: waiting effect updates unavailable: {error}");
+            return;
+        }
+    };
+    while let Some(effects) = updates.next().await {
+        let mut core = lock(&sink.core);
+        let Some(view) = core.view.as_mut().filter(|view| view.epoch == epoch) else {
+            return;
+        };
+        if view.waiting_effects == effects {
+            continue;
+        }
+        view.waiting_effects.clone_from(&effects);
+        crate::worker::emit_event_locked(
+            &mut core,
+            &sink.events,
+            SessionEvent::WaitingEffectsUpdate { effects },
         );
     }
 }

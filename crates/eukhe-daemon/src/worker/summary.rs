@@ -233,6 +233,12 @@ impl Worker {
                 .as_ref()
                 .map(|view| view.unknown_effects.clone())
                 .unwrap_or_default(),
+            waiting_effects: core
+                .view
+                .as_ref()
+                .map(|view| view.waiting_effects.clone())
+                .unwrap_or_default(),
+            approval_mode: settings.get_approval_mode(),
             r#loop: core
                 .view
                 .as_ref()
@@ -885,6 +891,7 @@ mod tests {
             active: None,
             goal: Value::Null,
             unknown_effects: Vec::new(),
+            waiting_effects: Vec::new(),
             loop_status: None,
             acceptance: Value::Null,
             workers: Vec::new(),

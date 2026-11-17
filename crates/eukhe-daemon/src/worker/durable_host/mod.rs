@@ -364,9 +364,16 @@ impl HostedSession {
             pause: Arc::clone(&self.deps().run_pause),
             shape: self.deps().shape,
         };
+        // The waiting effects live in the root conversation's ledger.
+        let ledger = self
+            .deps()
+            .harness
+            .root()
+            .map_or_else(|| conversation.id(), |root| root.id());
         let started = EventBridge::start(
             &self.harness,
             conversation,
+            ledger,
             provider_events,
             retry_policy,
             shape,

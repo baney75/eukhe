@@ -1205,12 +1205,43 @@ impl ReplKernelManager {
         arguments: &Value,
         timeout_ms: u64,
     ) -> Result<Value, McpLaneError> {
+        self.mcp_call(server, tool, arguments, timeout_ms, false)
+            .await
+    }
+
+    /// [`Self::mcp_tool_call`] as the user's own act: the `/approve` of a
+    /// call that waited for the user's approval runs past the kernel's
+    /// `mcp.gate`.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::mcp_tool_call`].
+    pub async fn mcp_tool_call_approved(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: &Value,
+        timeout_ms: u64,
+    ) -> Result<Value, McpLaneError> {
+        self.mcp_call(server, tool, arguments, timeout_ms, true)
+            .await
+    }
+
+    async fn mcp_call(
+        &self,
+        server: &str,
+        tool: &str,
+        arguments: &Value,
+        timeout_ms: u64,
+        approved: bool,
+    ) -> Result<Value, McpLaneError> {
         let frame = json!({
             "type": "mcp_call",
             "server": server,
             "tool": tool,
             "arguments": arguments,
             "timeout_ms": timeout_ms,
+            "approved": approved,
         });
         let request = || McpLaneRequest::ToolCall {
             server: server.to_owned(),

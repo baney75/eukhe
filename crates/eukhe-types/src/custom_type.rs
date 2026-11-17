@@ -22,6 +22,12 @@ pub const OUTPUT_LIMIT_NOTICE_CUSTOM_TYPE: &str = "eukhe.output_limit";
 /// model context.
 pub const SPAWN_FAILED_NOTICE_CUSTOM_TYPE: &str = "eukhe.spawn_failed";
 
+/// The `customType` of the row an approved irreversible effect leaves
+/// once it ran (`/approve`): its id, command and outcome
+/// ([`crate::effects::WaitingEffect::ran_text`]). Model context: the
+/// model reads it next turn.
+pub const APPROVED_EFFECT_CUSTOM_TYPE: &str = "eukhe.approved_effect";
+
 /// The type of one custom message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CustomType {

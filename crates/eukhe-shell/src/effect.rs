@@ -104,6 +104,46 @@ const NET: &[&str] = &[
     "wget",
 ];
 
+/// Programs that deploy or change remote state with any subcommand: each
+/// runs as `Exec` and `Net`.
+const DEPLOY: &[&str] = &[
+    "aws", "az", "firebase", "fly", "flyctl", "gcloud", "helm", "heroku", "kubectl", "netlify",
+    "vercel", "wrangler",
+];
+
+/// Programs whose subcommands publish, deploy or log in, with those
+/// subcommands: a step that names one anywhere in its arguments runs as
+/// `Exec` and `Net` (an option's value that matches errs to the stronger
+/// effect).
+const PUBLISH: &[(&[&str], &[&str])] = &[
+    (&["cargo"], &["publish", "yank", "owner", "login"]),
+    (
+        &["npm", "pnpm", "yarn"],
+        &[
+            "publish",
+            "unpublish",
+            "deprecate",
+            "dist-tag",
+            "owner",
+            "access",
+            "login",
+        ],
+    ),
+    (&["docker", "podman"], &["push", "login"]),
+    (&["twine"], &["upload"]),
+    (&["gem"], &["push"]),
+    (&["terraform"], &["apply", "destroy", "import"]),
+];
+
+/// Whether `program` with `args` publishes, deploys or logs in.
+fn publishes(program: &str, args: &[String]) -> bool {
+    DEPLOY.contains(&program)
+        || PUBLISH.iter().any(|(programs, subcommands)| {
+            programs.contains(&program)
+                && args.iter().any(|arg| subcommands.contains(&arg.as_str()))
+        })
+}
+
 /// The leading `git` arguments for a working tree the user may not trust
 /// (a session cwd, a snapshot or gate target, a `bash` step): with them a
 /// repository's own configuration cannot run a program through the
@@ -305,6 +345,7 @@ pub(crate) fn classify(assigns: &[(String, String)], words: &mut Vec<String>) ->
         name if READ.contains(&name) => read,
         name if WRITE.contains(&name) => write,
         name if NET.contains(&name) => net,
+        name if publishes(name, args) => exec.union(net),
         _ => exec,
     }
 }
@@ -692,6 +733,52 @@ mod tests {
             (&[], &["/usr/bin/curl", "https://example.com"]),
         ];
         assert_eq!(effects(cases), sets(&[&[Exec][..]; 5]));
+    }
+
+    #[test]
+    fn publish_and_deploy_commands_are_net() {
+        let net: &[Case] = &[
+            (&[], &["cargo", "publish"]),
+            (&[], &["cargo", "+nightly", "yank", "--version", "1.0.0"]),
+            (&[], &["cargo", "owner", "--add", "x"]),
+            (&[], &["cargo", "login"]),
+            (&[], &["npm", "publish"]),
+            (&[], &["pnpm", "--filter", "x", "publish"]),
+            (&[], &["yarn", "npm", "publish"]),
+            (&[], &["npm", "unpublish", "x@1"]),
+            (&[], &["npm", "deprecate", "x", "old"]),
+            (&[], &["npm", "dist-tag", "add", "x@1", "latest"]),
+            (&[], &["npm", "owner", "add", "u", "x"]),
+            (&[], &["npm", "access", "public"]),
+            (&[], &["npm", "login"]),
+            (&[], &["docker", "push", "img"]),
+            (&[], &["podman", "login", "quay.io"]),
+            (&[], &["twine", "upload", "dist/*"]),
+            (&[], &["gem", "push", "x.gem"]),
+            (&[], &["terraform", "apply"]),
+            (&[], &["terraform", "destroy"]),
+            (&[], &["terraform", "import", "a", "b"]),
+            (&[], &["kubectl", "get", "pods"]),
+            (&[], &["helm", "install", "x"]),
+            (&[], &["aws", "s3", "ls"]),
+            (&[], &["gcloud", "deploy"]),
+            (&[], &["az", "login"]),
+            (&[], &["fly", "deploy"]),
+            (&[], &["flyctl", "deploy"]),
+            (&[], &["vercel"]),
+            (&[], &["netlify", "deploy"]),
+            (&[], &["wrangler", "deploy"]),
+            (&[], &["heroku", "releases"]),
+            (&[], &["firebase", "deploy"]),
+        ];
+        assert_eq!(effects(net), sets(&[&[Exec, Net][..]; 32]));
+        let local: &[Case] = &[
+            (&[], &["cargo", "build"]),
+            (&[], &["npm", "install"]),
+            (&[], &["docker", "build", "."]),
+            (&[], &["terraform", "plan"]),
+        ];
+        assert_eq!(effects(local), sets(&[&[Exec][..]; 4]));
     }
 
     #[test]

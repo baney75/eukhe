@@ -196,6 +196,9 @@ fn populated() -> Settings {
         shell: Some(ShellSettings {
             auto_effects: Some(vec![]),
         }),
+        approvals: Some(crate::settings::types::ApprovalsSettings {
+            mode: Some("watch".into()),
+        }),
         ssh: Some(SshSettings {
             hosts: Some(vec![]),
         }),

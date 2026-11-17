@@ -20,6 +20,7 @@ mod agent_reply;
 mod budget;
 mod checks;
 mod effects;
+mod waiting_effects;
 pub(crate) use budget::CreateBudget;
 mod input;
 pub(crate) use input::{parse_prompt_images, submit_input, InputRequest, InputRowError};
@@ -137,6 +138,9 @@ pub struct Worker {
     side_questions: crate::side_question::SideQuestionManager,
     /// The `bash` tool's open approval questions (`answer_shell_approval`).
     shell_approvals: crate::shell_approval::ShellApprovals,
+    /// Where an effect waiting for the user's approval is recorded: the
+    /// root session's ledger (`relay_waiting_effect`).
+    pub(crate) waiting_relay: crate::waiting_relay::WaitingRelay,
     /// Single-use peer-transport grants (worker memory only).
     pub(crate) peer_grants: PeerGrantStore,
     /// Compaction commands.
@@ -282,23 +286,29 @@ impl Worker {
         );
         // A question no client of this session answers goes up to the
         // parent session over the supervisor link; the user may take as
-        // long as a turn.
+        // long as a turn. A waiting effect goes up the same way to the
+        // root session's ledger.
+        let relay: crate::shell_approval::Relay = Arc::new(move |command| {
+            let link = Arc::clone(&roster_link);
+            Box::pin(async move {
+                link.request(
+                    command,
+                    std::time::Duration::from_millis(crate::supervisor::WORKER_REQUEST_TIMEOUT_MS),
+                )
+                .await
+            })
+        });
         let shell_approvals = crate::shell_approval::ShellApprovals::new(
             Arc::clone(&core),
             events.clone(),
             config.active_session_id.clone(),
-            Arc::new(move |command| {
-                let link = Arc::clone(&roster_link);
-                Box::pin(async move {
-                    link.request(
-                        command,
-                        std::time::Duration::from_millis(
-                            crate::supervisor::WORKER_REQUEST_TIMEOUT_MS,
-                        ),
-                    )
-                    .await
-                })
-            }),
+            Arc::clone(&relay),
+        );
+        let waiting_relay = crate::waiting_relay::WaitingRelay::new(
+            Arc::clone(&core),
+            session.clone(),
+            config.active_session_id.clone(),
+            relay,
         );
         let compaction = crate::compaction::CompactionManager::new(
             session.clone(),
@@ -334,6 +344,7 @@ impl Worker {
             recovery,
             side_questions,
             shell_approvals,
+            waiting_relay,
             peer_grants: PeerGrantStore::new(),
             compaction,
             tree_navigation,

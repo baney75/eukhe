@@ -463,6 +463,30 @@ impl Worker {
         self.set_session_cvar(command, decl, mode).await
     }
 
+    /// `set_approval_mode { mode }` (`/watch on|off`): this session's
+    /// `approvals.mode`: `end` (an irreversible effect waits, unasked, for
+    /// `/approve`) or `watch` (it is asked mid-run). The connection state
+    /// reads it back.
+    #[tracing::instrument(skip(self, payload))]
+    pub(crate) async fn handle_set_approval_mode(&self, payload: &Value) -> DaemonResponse {
+        const COMMAND: &str = "set_approval_mode";
+        if let Err(response) = self.require_created(COMMAND) {
+            return response;
+        }
+        let Some(mode) = payload.get("mode").and_then(|mode| {
+            <eukhe_types::effects::ApprovalMode as serde::Deserialize>::deserialize(mode).ok()
+        }) else {
+            return response_failure(
+                None,
+                COMMAND,
+                "set_approval_mode requires mode \"end\" or \"watch\"",
+                None,
+            );
+        };
+        self.set_session_cvar(COMMAND, &table::APPROVALS_MODE, mode.as_str())
+            .await
+    }
+
     /// `set_auto_retry { enabled }` (TS `session.setAutoRetryEnabled`):
     /// this session's `retry.enabled`, which the provider retry policy
     /// reads on every request.

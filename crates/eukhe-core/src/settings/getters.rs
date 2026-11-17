@@ -723,6 +723,13 @@ impl SettingsManager {
         self.cvars().list(&table::SHELL_AUTO_EFFECTS)
     }
 
+    /// `approvals.mode`: when an irreversible effect is asked about; by
+    /// default at the end (it waits for `/approve`).
+    #[must_use]
+    pub fn get_approval_mode(&self) -> eukhe_types::effects::ApprovalMode {
+        self.choice(&table::APPROVALS_MODE)
+    }
+
     /// `privacy.anonymizeRemote`: scrub outbound request text of a remote
     /// provider (opt-in, default false).
     #[must_use]

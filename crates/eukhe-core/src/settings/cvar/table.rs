@@ -1308,6 +1308,20 @@ pub const SHELL_AUTO_EFFECTS: Decl = Decl {
     init: Init::List(SHELL_REVERSIBLE_EFFECTS),
 };
 
+const APPROVAL_MODES: &[&str] = &["end", "watch"];
+
+/// When an irreversible effect is asked about: `end` (it waits, unasked,
+/// for `/approve` after the run) or `watch` (asked mid-run; no answer
+/// leaves it waiting). `/watch on|off` sets it; an agent never saves it.
+pub const APPROVALS_MODE: Decl = Decl {
+    id: "approvals.mode",
+    ty: CvarType::Choice(APPROVAL_MODES),
+    scope: CvarScope::Local,
+    persist: false,
+    replicate: false,
+    init: Init::Text("end"),
+};
+
 /// The hosts an `ssh://` read may reach : new
 /// outbound traffic, so a project may not set it and an agent never
 /// saves it. Empty: every `ssh://` read is rejected.
@@ -1579,6 +1593,7 @@ pub const DECLS: &[Decl] = &[
     GATEWAY_ROOT_HEARTBEAT,
     KERNEL_TRANSPORT,
     SHELL_AUTO_EFFECTS,
+    APPROVALS_MODE,
     SSH_HOSTS,
     MODEL_ROLE_ALL,
     MODEL_ROLE_TINY,

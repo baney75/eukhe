@@ -1,12 +1,13 @@
-//! The `bash` tool's approval path end to end (G5): a
-//! real supervisor and worker, the scripted faux model calling `bash`, in
-//! a session whose user narrowed `shell.autoEffects` to `read` (by default
-//! a write and a run of a program run unasked). An attached client gets
-//! one `shell_approval` frame per gated step and answers with
+//! The `bash` tool's approval path end to end (G5, I3): a real
+//! supervisor and worker, the scripted faux model calling `bash`, in a
+//! session whose user narrowed `shell.autoEffects` to `read` (by default
+//! a write and a run of a program run unasked) and watches the run
+//! (`approvals.mode` `watch`). An attached client gets one
+//! `shell_approval` frame per gated step and answers with
 //! `answer_shell_approval`: it approves the first write and denies the
-//! second, so the script stops there. With no client attached no one is
-//! asked, and the first gated step is refused as unanswered. The phone
-//! gateway is asked like any other client.
+//! second, so the script stops there. With no client attached no one
+//! answers, and the first gated step waits for `/approve`, never run. The
+//! phone gateway is asked like any other client.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -124,14 +125,15 @@ impl Client {
 
 /// A daemon over `dir` whose faux model calls `bash` with `script`, one
 /// connected client, and the session it created. The user's auto set is
-/// `read` alone, so every write asks.
+/// `read` alone, so every write asks; the user watches.
 fn open(dir: &Path, script: &str) -> (Daemon, Client, String) {
     let agent_dir = dir.join("agent");
     let sessions_dir = agent_dir.join("sessions");
     std::fs::create_dir_all(&sessions_dir).expect("sessions dir");
     std::fs::write(
         agent_dir.join("settings.json"),
-        json!({ "shell": { "autoEffects": ["read"] } }).to_string(),
+        json!({ "shell": { "autoEffects": ["read"] }, "approvals": { "mode": "watch" } })
+            .to_string(),
     )
     .expect("write settings");
     let faux = dir.join("faux.json");
@@ -274,8 +276,10 @@ fn an_attached_client_approves_one_step_and_denies_the_next() {
     );
 }
 
+/// I3: a watched question no one answers is never a yes: the step waits
+/// in the ledger for `/approve`, and it and the steps after it never ran.
 #[test]
-fn with_no_client_attached_a_gated_step_is_refused_unanswered() {
+fn with_no_client_attached_a_watched_step_waits_unanswered() {
     let dir = tempfile::TempDir::new().expect("temp dir");
     let (_daemon, mut client, session) = open(dir.path(), SCRIPT);
     client.command(
@@ -287,17 +291,25 @@ fn with_no_client_attached_a_gated_step_is_refused_unanswered() {
         &json!({ "type": "wait_for_idle", "activeSessionId": session }),
     );
     let result = tool_result(&mut client, &session);
+    let listed = client.command(
+        "l1",
+        &json!({ "type": "get_waiting_effects", "activeSessionId": session }),
+    );
     println!("result: {result}");
     assert_eq!(
         (
             result,
             client.approvals.len(),
+            listed["data"]["effects"][0]["command"].clone(),
+            listed["data"]["effects"][0]["status"].clone(),
             dir.path().join("approved.txt").exists(),
         ),
         (
-            "[stopped at step 0 (read+write): `echo one >approved.txt` and the steps after it did not run: it needs the user's approval, and no client answered. Ask the user to attach a client, or to allow its effect in shell.autoEffects if that is read, write, exec, net, outside, protected or secret; or use read-only steps.]\n"
+            "[waiting for the user's approval: step 0 (read+write) `echo one >approved.txt` is w1; it and the steps after it did not run. Continue with the rest of the work; do not try another way to do it.]\n"
                 .to_owned(),
             0,
+            json!("echo one >approved.txt"),
+            json!("waiting"),
             false,
         )
     );

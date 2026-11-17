@@ -38,6 +38,7 @@ from . import host_request
 from .mcp_base import McpToolError
 
 __all__ = [
+    "McpCallNotRun",
     "McpCredentialsUnavailable",
     "McpDiscoveryError",
     "McpStartupError",
@@ -102,6 +103,15 @@ class McpCredentialsUnavailable(RuntimeError):
 
     The user must connect the service first (`/plugins` or
     `/mcp login <service>`)."""
+
+
+class McpCallNotRun(RuntimeError):
+    """Raised when the host did not run an MCP tool call.
+
+    A tool the server does not declare read-only (`readOnlyHint: true`)
+    has effects of unknown kind: the host records the call waiting for the
+    user's approval after the run (`/approve` runs it then), or, watching,
+    the user said no. The message is the host's text for the model."""
 
 
 class _StderrTail(io.TextIOBase):
@@ -171,6 +181,8 @@ class _Generation:
         self.stack = AsyncExitStack()
         self.session: Any = None
         self.tools: dict[str, dict[str, Any]] = {}
+        # The tools the server declares read-only (`readOnlyHint: true`).
+        self.read_only: set[str] = set()
         self.closed = False
         self._call_lock = asyncio.Lock()
         self._stderr: _StderrTail | None = None
@@ -334,6 +346,7 @@ class _Generation:
         so a partial inventory is never published as if complete.
         """
         tools: dict[str, dict[str, Any]] = {}
+        read_only: set[str] = set()
         cursors: set[str] = set()
         cursor: str | None = None
         pages = 0
@@ -352,6 +365,9 @@ class _Generation:
                     "description": getattr(tool, "description", "") or "",
                     "inputSchema": schema if isinstance(schema, dict) else {},
                 }
+                annotations = getattr(tool, "annotations", None)
+                if getattr(annotations, "readOnlyHint", None) is True:
+                    read_only.add(name)
             cursor = getattr(response, "next_cursor", None)
             if cursor is None:
                 cursor = getattr(response, "nextCursor", None)
@@ -373,6 +389,7 @@ class _Generation:
                 )
             cursors.add(cursor)
         self.tools = tools
+        self.read_only = read_only
 
     async def _list_tools_page(self, cursor: str | None) -> Any:
         if cursor is None:
@@ -388,15 +405,36 @@ class _Generation:
             return False
         return not (isinstance(disabled, list) and tool in disabled)
 
-    async def call(self, tool: str, arguments: dict[str, Any]) -> Any:
+    def _check(self, tool: str) -> None:
         if not self.allows(tool):
             raise PermissionError(f"MCP tool '{tool}' is disabled for server '{self.server}'")
         if tool not in self.tools:
             raise KeyError(f"MCP server '{self.server}' has no tool '{tool}'")
+
+    async def call(self, tool: str, arguments: dict[str, Any]) -> Any:
+        self._check(tool)
         async with self._call_lock:
             async with asyncio.timeout(self.call_timeout):
                 result = await self.session.call_tool(tool, arguments)
         return _parse_result(result)
+
+    async def gated_call(self, tool: str, arguments: dict[str, Any]) -> Any:
+        """`call` once the host's gate lets it run (`mcp.gate`): a tool not
+        declared read-only waits for the user's approval, or, watching, is
+        asked. Raises McpCallNotRun with the host's text otherwise."""
+        self._check(tool)
+        verdict = await host_request(
+            "mcp.gate",
+            {
+                "server": self.server,
+                "tool": tool,
+                "arguments": arguments,
+                "readOnly": tool in self.read_only,
+            },
+        )
+        if verdict.get("run") is not True:
+            raise McpCallNotRun(str(verdict.get("text") or f"MCP tool '{tool}' did not run"))
+        return await self.call(tool, arguments)
 
     async def resources(self) -> list[dict[str, Any]]:
         """The server's resources (``resources/list``), following its cursors
@@ -559,8 +597,10 @@ class _Registry:
 
         return await self._tracked(operation)
 
-    async def call(self, server: str, tool: str, arguments: dict[str, Any]) -> Any:
-        return await self._on(server, lambda generation: generation.call(tool, arguments))
+    async def call(self, server: str, tool: str, arguments: dict[str, Any], *, approved: bool = False) -> Any:
+        if approved:
+            return await self._on(server, lambda generation: generation.call(tool, arguments))
+        return await self._on(server, lambda generation: generation.gated_call(tool, arguments))
 
     async def resources(self, server: str) -> list[dict[str, Any]]:
         return await self._on(server, lambda generation: generation.resources())
@@ -689,10 +729,22 @@ async def status(servers: list[str], timeout_ms: float) -> list[dict[str, Any]]:
 
 
 async def call_tool(server: str, tool: str, arguments: dict[str, Any] | None = None) -> Any:
+    """Call `tool` of `server`. A tool the server does not declare read-only
+    (`readOnlyHint: true`) runs only when the host's gate lets it: else it
+    raises McpCallNotRun, whose message says where the call stands."""
     _validate_name(tool, "tool")
     if arguments is not None and not isinstance(arguments, dict):
         raise TypeError("arguments must be a dict or None")
     return await _dispatch(lambda: _registry.call(server, tool, arguments or {}))
+
+
+async def _call_approved(server: str, tool: str, arguments: dict[str, Any] | None = None) -> Any:
+    """The user's `/approve` of a call that waited: it runs without the gate.
+    The host's `mcp_call` lane sends it (`approved: true`)."""
+    _validate_name(tool, "tool")
+    if arguments is not None and not isinstance(arguments, dict):
+        raise TypeError("arguments must be a dict or None")
+    return await _dispatch(lambda: _registry.call(server, tool, arguments or {}, approved=True))
 
 
 async def list_resources(server: str) -> list[dict[str, Any]]:

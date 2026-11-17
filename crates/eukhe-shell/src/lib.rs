@@ -6,10 +6,11 @@
 //! redirection's target, each path it names, by class: a command the
 //! table does not know is `Exec`), and runs it only when the compiled
 //! core's gate (`eukhe_bend::rules::shell`: bend/tools.bend `join` and
-//! `within`) finds every effect within the [`eukhe_types::shell::AutoSet`]
-//! or the [`Approver`] approves it. A denial, or no answer, stops the
-//! script at that step: the steps before it ran and their effects stand,
-//! it and every later step did not run.
+//! `within`) finds every effect within the [`eukhe_types::shell::AutoSet`].
+//! Any other step is irreversible: it waits for the user's approval after
+//! the run ([`End::Waits`]), or, watching, the [`Approver`] asks; a denial
+//! stops it as refused. Either way the steps before it ran and their
+//! effects stand, it and every later step did not run.
 //!
 //! The common commands run in process with their common options (`cat`,
 //! `ls`, `head`, `tail`, `wc`, `echo`, `pwd`, `mkdir`, `rm`, `rmdir`,
@@ -34,5 +35,5 @@ mod run;
 mod shown;
 
 pub use effect::GIT_UNTRUSTED_REPO_ARGS;
-pub use run::{Answer, Approval, Approver, Ask, End, Ran, Refusal, Shell, Sink, StepRun, Stream};
+pub use run::{Answer, Approval, Approver, Ask, End, Ran, Shell, Sink, StepRun, Stream};
 pub use shown::visible;

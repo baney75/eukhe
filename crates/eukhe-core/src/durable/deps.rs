@@ -238,6 +238,18 @@ pub type ShellApprovalSink = Arc<
         + Sync,
 >;
 
+/// Records an irreversible effect waiting for the user's approval in the
+/// root session's ledger and answers it as recorded (with its `w<N>` id):
+/// the daemon worker of a subagent relays it up the chain to the root;
+/// `None` records it in this session's own ledger.
+pub type WaitingSink = Arc<
+    dyn Fn(
+            eukhe_types::effects::WaitingEffect,
+        ) -> BoxFuture<'static, Result<eukhe_types::effects::WaitingEffect, String>>
+        + Send
+        + Sync,
+>;
+
 /// An MCP login surface: the UI the OAuth flow drives and its HTTP client
 /// (see [`crate::mcp::wire_begin_login`]).
 #[derive(Clone)]
@@ -311,6 +323,9 @@ pub struct SessionConfig {
     /// The approval channel of the `bash` tool's gated steps; `None`
     /// leaves every gated step unanswered (denied).
     pub shell_approval: Option<ShellApprovalSink>,
+    /// Where an irreversible effect is recorded waiting; `None`: this
+    /// session's own ledger.
+    pub waiting: Option<WaitingSink>,
     /// Boot the main conversation's Python kernel in the background at open
     /// (TS `createDefaultRuntimeFactory`'s `prewarmIpythonKernel: true`, the
     /// daemon's sessions): honored for top-level sessions only (the TS
@@ -364,6 +379,7 @@ impl SessionConfig {
             progress_note: None,
             job_settled: None,
             shell_approval: None,
+            waiting: None,
             prewarm_kernel: false,
             host: SessionHost::Resident,
             stored_work: StoredWork::Resume,
@@ -560,6 +576,8 @@ pub struct HostDeps {
     pub job_settled: Option<JobSettledSink>,
     /// [`SessionConfig::shell_approval`].
     pub shell_approval: Option<ShellApprovalSink>,
+    /// [`SessionConfig::waiting`].
+    pub waiting: Option<WaitingSink>,
     /// [`SessionConfig::prewarm_kernel`].
     pub prewarm_kernel: bool,
     /// [`SessionConfig::kernel_python`].
@@ -589,6 +607,12 @@ pub struct HostDeps {
     /// installs with a memory: a side request shapes its messages as the
     /// chat memory's `before_request` hook shapes a turn's.
     pub(crate) optchat: OnceLock<Weak<super::optchat::OptChat>>,
+    /// The session's documents, set when the `eukhe.documents` extension
+    /// installs: `/approve` re-runs a document access through it.
+    pub(crate) documents: OnceLock<Weak<super::documents::DocumentsHost>>,
+    /// Held while an approval runs its effects: approvals of the session
+    /// run one at a time ([`super::approve::approve_waiting`]).
+    pub(crate) approvals: tokio::sync::Mutex<()>,
     /// Resolves once the `eukhe.compaction` observer serviced every commit
     /// published before the call; set when the observer starts.
     pub(crate) compaction_barrier: OnceLock<ObserverBarrier>,
@@ -664,6 +688,7 @@ impl HostDeps {
             progress_note: config.progress_note.clone(),
             job_settled: config.job_settled.clone(),
             shell_approval: config.shell_approval.clone(),
+            waiting: config.waiting.clone(),
             prewarm_kernel: config.prewarm_kernel,
             host: config.host,
             kernel_python: config.kernel_python.clone(),
@@ -678,6 +703,8 @@ impl HostDeps {
             closing: SessionClosing::default(),
             jobs: super::jobs::JobTable::new(harness),
             state_tree: OnceLock::new(),
+            documents: OnceLock::new(),
+            approvals: tokio::sync::Mutex::new(()),
             tool_surface: super::tool_surface::ToolSurface::default(),
             auxiliary_notices: super::compaction::auxiliary_model::AuxiliaryNotices::default(),
             semantic_edges: services.semantic_edges,

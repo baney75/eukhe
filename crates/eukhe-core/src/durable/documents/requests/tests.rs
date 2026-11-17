@@ -44,6 +44,7 @@ fn registry(dir: &std::path::Path) -> HostRequestRegistry {
                 Box::pin(async { eukhe_types::shell::ShellAnswer::Approve })
                     as futures::future::BoxFuture<'static, _>
             })),
+            recorder: crate::durable::waiting::Recorder::numbering_w1(),
         },
     };
     register(&registry, &Arc::new(host));

@@ -22,24 +22,26 @@
 //! The secret set holds the state list's credentials and the credential
 //! stores other programs keep in the home dir.
 //!
-//! [`DocumentsGate`] is the gate of one document tool call: every access
-//! the user's auto set (`shell.autoEffects`) does not allow asks the user
-//! through the session's approval sink, as a `bash` step does (a secret
-//! access gates like any other).
+//! [`DocumentsGate`] is the gate of one document tool call: an access the
+//! user's auto set (`shell.autoEffects`) does not allow is irreversible,
+//! as a `bash` step is: it waits for the user's approval after the run,
+//! recorded with the call that re-runs it, or, watching, is asked through
+//! the session's approval sink.
 
 use std::ffi::{OsStr, OsString};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use eukhe_bend::rules::shell::Gate;
+use eukhe_bend::rules::irreversible::{self, Declared, Fate, Route, Said};
 use eukhe_docs::{Access, AccessGate, AccessRefusal};
-use eukhe_shell::Refusal;
+use eukhe_types::effects::{ApprovalMode, WaitingAt, WaitingKind};
 use eukhe_types::path_policy::{PathClass, PathPolicy, PathRule, RealPath};
-use eukhe_types::shell::{AutoSet, ShellApprovalRequest, ShellEffects};
+use eukhe_types::shell::{AutoSet, ShellAnswer, ShellApprovalRequest, ShellEffects};
 
 use super::deps::ShellApprovalSink;
 use super::settings::EukheSettings;
 use super::shell::RefusalText;
+use super::waiting::{core_mode, Held, Recorder};
 use crate::settings::{CONFIG_DIR_NAME, PROFILE_DIR};
 use crate::state_list::{state_list, Install, StateKind, StatePart};
 
@@ -185,56 +187,137 @@ pub(crate) fn effects(policy: &PathPolicy, access: Access, real: &RealPath) -> S
     }
 }
 
+/// The call a document access belongs to, as `/approve` re-runs it: the
+/// function, the cwd its relative paths resolve against, its arguments.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct Rerun {
+    pub(crate) function: &'static str,
+    pub(crate) cwd: PathBuf,
+    pub(crate) args: serde_json::Value,
+}
+
+/// Which access a gate lets through whatever its effects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Allowed {
+    /// None: every access is gated.
+    Gated,
+    /// The one path the user approved (`/approve` of a document access).
+    Approved(PathBuf),
+}
+
 /// The gate of one document tool call (or one kernel `fs.*` request).
 pub(crate) struct DocumentsGate {
     pub(crate) policy: PathPolicy,
     pub(crate) auto: AutoSet,
-    /// The session's approval sink; `None`: no client can answer, and
-    /// every access that asks is refused.
+    pub(crate) mode: ApprovalMode,
+    /// The session's approval sink (watching); `None`: no client can
+    /// answer, and every access asked waits.
     pub(crate) sink: Option<ShellApprovalSink>,
+    /// Where an access that waits is recorded.
+    pub(crate) recorder: Recorder,
     /// The call's id: each question's id is the call id and its number.
     pub(crate) call: String,
+    /// The call as it re-runs.
+    pub(crate) rerun: Rerun,
+    pub(crate) allowed: Allowed,
     pub(crate) asked: AtomicU64,
     /// The runtime the sink's answer arrives on; the gate runs on a
     /// blocking thread of it.
     pub(crate) runtime: tokio::runtime::Handle,
 }
 
-/// Why a [`DocumentsGate`] refused an access. The effects open the
+/// Why a [`DocumentsGate`] stopped an access. The effects open a
 /// refusal, as a `bash` step's stop line names them: the model learns
 /// which effect needs the user's approval.
 #[derive(Debug, thiserror::Error)]
-#[error("({}) {refusal}", effects.names())]
-pub(crate) struct DocumentsRefusal {
-    effects: ShellEffects,
-    refusal: RefusalText,
+pub(crate) enum DocumentsRefusal {
+    /// The user said no while watching.
+    #[error("({}) {}", effects.names(), RefusalText::DENIED)]
+    Denied { effects: ShellEffects },
+    /// It waits for `/approve`: the model's text.
+    #[error("{0}")]
+    Waits(String),
+    /// It waits, but the ledger could not record it.
+    #[error("({}) it needs the user's approval and could not be recorded waiting: {error}", effects.names())]
+    Unrecorded {
+        effects: ShellEffects,
+        error: String,
+    },
 }
 
-impl AccessGate for DocumentsGate {
-    fn check(&self, access: Access, real: &RealPath, _display: &str) -> Result<(), AccessRefusal> {
-        let effects = effects(&self.policy, access, real);
-        if eukhe_bend::rules::shell::allows(self.auto, effects) == Gate::Unasked {
-            return Ok(());
-        }
-        let refused =
-            |refusal: RefusalText| Err(AccessRefusal::new(DocumentsRefusal { effects, refusal }));
-        let Some(sink) = &self.sink else {
-            return refused(RefusalText::of(Refusal::Unanswered));
-        };
-        let step = self.asked.fetch_add(1, Ordering::Relaxed);
+impl DocumentsGate {
+    /// The access as people read it.
+    fn shown(access: Access, real: &RealPath) -> String {
         let verb = match access {
             Access::Read => "read",
             Access::List => "list",
             Access::Search => "search",
             Access::Write => "write",
         };
+        eukhe_shell::visible(&format!("{verb} {}", real.path().display()))
+    }
+
+    /// Record the access waiting with the call that re-runs it.
+    fn wait(&self, access: Access, real: &RealPath, effects: ShellEffects) -> DocumentsRefusal {
+        let held = Held {
+            kind: WaitingKind::DocumentWrite,
+            command: Self::shown(access, real),
+            cwd: self.rerun.cwd.display().to_string(),
+            effects,
+            payload: serde_json::json!({
+                "function": self.rerun.function,
+                "cwd": self.rerun.cwd,
+                "args": self.rerun.args,
+                "path": real.path(),
+            }),
+        };
+        match self.runtime.block_on(self.recorder.record(held)) {
+            Ok(effect) => DocumentsRefusal::Waits(effect.waiting_text(WaitingAt::Call)),
+            Err(error) => DocumentsRefusal::Unrecorded { effects, error },
+        }
+    }
+
+    /// Ask the user (watching): what they said.
+    fn ask(&self, access: Access, real: &RealPath, effects: ShellEffects) -> Said {
+        let Some(sink) = &self.sink else {
+            return Said::Silent;
+        };
+        let step = self.asked.fetch_add(1, Ordering::Relaxed);
         let request = ShellApprovalRequest {
             request_id: format!("{}:{step}", self.call),
             step,
-            command: eukhe_shell::visible(&format!("{verb} {}", real.path().display())),
+            command: Self::shown(access, real),
             effects,
         };
-        RefusalText::of_answer(self.runtime.block_on(sink(request))).map_or(Ok(()), refused)
+        match self.runtime.block_on(sink(request)) {
+            ShellAnswer::Approve => Said::Yes,
+            ShellAnswer::Deny => Said::No,
+            ShellAnswer::Unanswered => Said::Silent,
+        }
+    }
+}
+
+impl AccessGate for DocumentsGate {
+    fn check(&self, access: Access, real: &RealPath, _display: &str) -> Result<(), AccessRefusal> {
+        match &self.allowed {
+            Allowed::Approved(path) if path.as_path() == real.path() => return Ok(()),
+            Allowed::Approved(_) | Allowed::Gated => {}
+        }
+        let effects = effects(&self.policy, access, real);
+        let stopped = match irreversible::route(
+            self.auto,
+            Declared::Effects(effects),
+            core_mode(self.mode),
+        ) {
+            Route::Runs => return Ok(()),
+            Route::Waits => self.wait(access, real, effects),
+            Route::Asks => match irreversible::settle(self.ask(access, real, effects)) {
+                Fate::Runs => return Ok(()),
+                Fate::Refused => DocumentsRefusal::Denied { effects },
+                Fate::Waits => self.wait(access, real, effects),
+            },
+        };
+        Err(AccessRefusal::new(stopped))
     }
 }
 

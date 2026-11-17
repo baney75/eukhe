@@ -729,12 +729,20 @@ impl Worker {
                 },
             );
         }));
-        // The `bash` tool's approval questions go to the attached clients
-        // (the first answer wins; no client, no answer: a denial).
+        // Watching (`approvals.mode` `watch`), the approval questions of
+        // the gates go to the attached clients (the first answer wins; no
+        // client, no answer: the effect waits for `/approve`).
         let shell_approvals = self.shell_approvals.clone();
         config.shell_approval = Some(Arc::new(move |request| {
             let shell_approvals = shell_approvals.clone();
             Box::pin(async move { shell_approvals.ask(request).await })
+        }));
+        // An irreversible effect waits in the root session's ledger: a
+        // subagent's goes up the chain.
+        let waiting_relay = self.waiting_relay.clone();
+        config.waiting = Some(Arc::new(move |effect| {
+            let waiting_relay = waiting_relay.clone();
+            Box::pin(async move { waiting_relay.record_own(effect).await })
         }));
         // Each accepted `rlm.progress.note` is a roster `note` candidate:
         // keep the latest on the core and push the changed summary.

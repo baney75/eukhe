@@ -2162,6 +2162,57 @@ class McpCallLaneTest(unittest.TestCase):
         )
         self.assertEqual(calls, [("fx", "echo", {"message": "hi"}), ("fx", "boom", None)])
 
+    def test_mcp_call_lane_gate_and_approved_calls(self):
+        """A call the host's gate does not run answers the host's text as its
+        result; `approved: true` runs past the gate; a non-boolean
+        `approved` is refused."""
+        sys.path.insert(0, SRC)
+        self.addCleanup(sys.path.remove, SRC)
+        import rlm.mcp as mcp_mod
+        import rlm.repl as repl
+
+        calls = []
+
+        async def gated_call_tool(server, tool, arguments=None):
+            calls.append(("gated", tool))
+            raise mcp_mod.McpCallNotRun("[waiting for the user's approval: w1]")
+
+        async def approved_call(server, tool, arguments=None):
+            calls.append(("approved", tool))
+            return "stamped"
+
+        sent = []
+
+        async def main():
+            for request in (
+                {"type": "mcp_call", "id": "g1", "server": "fx", "tool": "stamp"},
+                {"type": "mcp_call", "id": "a1", "server": "fx", "tool": "stamp", "approved": True},
+                {"type": "mcp_call", "id": "b1", "server": "fx", "tool": "stamp", "approved": "yes"},
+            ):
+                repl._spawn_mcp_lane(repl._handle_mcp_call, request, {})
+            await asyncio.wait(set(repl._mcp_status_tasks), timeout=5)
+
+        with mock.patch.object(mcp_mod, "call_tool", gated_call_tool), mock.patch.object(
+            mcp_mod, "_call_approved", approved_call
+        ), mock.patch.object(repl, "_send", sent.append):
+            asyncio.run(main())
+
+        dones = {event["id"]: event for event in sent if event["event"] == "done"}
+        self.assertEqual(
+            dones,
+            {
+                "g1": {"event": "done", "id": "g1", "status": "ok", "result": "[waiting for the user's approval: w1]"},
+                "a1": {"event": "done", "id": "a1", "status": "ok", "result": "stamped"},
+                "b1": {
+                    "event": "done",
+                    "id": "b1",
+                    "status": "error",
+                    "error": "ValueError: mcp_call approved must be a boolean",
+                },
+            },
+        )
+        self.assertEqual(sorted(calls), [("approved", "stamp"), ("gated", "stamp")])
+
 
 class McpResourceLaneTest(unittest.TestCase):
     """In-process checks of the dedicated-lane `mcp_resource` request."""

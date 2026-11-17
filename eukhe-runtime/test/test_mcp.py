@@ -191,6 +191,68 @@ class McpRegistryTest(unittest.TestCase):
 
         run(scenario())
 
+    def test_read_only_tools_come_from_the_read_only_hint(self):
+        tools = [
+            SimpleNamespace(name="ro", description="", inputSchema={}, annotations=SimpleNamespace(readOnlyHint=True)),
+            SimpleNamespace(name="rw", description="", inputSchema={}, annotations=SimpleNamespace(readOnlyHint=False)),
+            SimpleNamespace(name="bare", description="", inputSchema={}, annotations=None),
+            SimpleNamespace(name="old", description="", inputSchema={}),
+        ]
+        generation = self.generation({"type": "http"}, tools)
+        self.assertEqual(generation.read_only, {"ro"})
+
+    def test_a_call_runs_only_when_the_host_gate_lets_it(self):
+        tools = [
+            SimpleNamespace(name="ro", description="", inputSchema={}, annotations=SimpleNamespace(readOnlyHint=True)),
+            SimpleNamespace(name="rw", description="", inputSchema={}),
+        ]
+        generation = self.generation({"type": "http"}, tools)
+        generation.session.result = CallToolResult(content=[TextContent(type="text", text="done")])
+        asked = []
+
+        async def host_request(method, payload):
+            asked.append((method, payload))
+            if payload["readOnly"]:
+                return {"run": True}
+            return {"run": False, "text": "[waiting for the user's approval: w1]"}
+
+        async def scenario():
+            with mock.patch.object(mcp._registry, "_get_locked", mock.AsyncMock(return_value=generation)):
+                ran = await mcp.call_tool("svc", "ro", {"a": 1})
+                with self.assertRaises(mcp.McpCallNotRun) as waited:
+                    await mcp.call_tool("svc", "rw", {"b": 2})
+                return ran, str(waited.exception)
+
+        with mock.patch.object(mcp, "host_request", host_request):
+            ran, waited = run(scenario())
+        self.assertEqual(
+            (ran, waited, asked, generation.session.calls),
+            (
+                "done",
+                "[waiting for the user's approval: w1]",
+                [
+                    ("mcp.gate", {"server": "svc", "tool": "ro", "arguments": {"a": 1}, "readOnly": True}),
+                    ("mcp.gate", {"server": "svc", "tool": "rw", "arguments": {"b": 2}, "readOnly": False}),
+                ],
+                [("ro", {"a": 1})],
+            ),
+        )
+
+    def test_an_approved_call_runs_past_the_gate(self):
+        generation = self.generation({"type": "http"}, [SimpleNamespace(name="rw", description="", inputSchema={})])
+        generation.session.result = CallToolResult(content=[TextContent(type="text", text="done")])
+
+        async def host_request(method, payload):
+            raise AssertionError(f"the approved call asked the gate: {method} {payload}")
+
+        async def scenario():
+            with mock.patch.object(mcp._registry, "_get_locked", mock.AsyncMock(return_value=generation)):
+                return await mcp._call_approved("svc", "rw", {"b": 2})
+
+        with mock.patch.object(mcp, "host_request", host_request):
+            self.assertEqual(run(scenario()), "done")
+        self.assertEqual(generation.session.calls, [("rw", {"b": 2})])
+
     def test_reuses_generation_and_closes_before_replacement(self):
         configs = [{"type": "http", "url": "a"}, {"type": "http", "url": "a"}, {"type": "http", "url": "b"}]
         opened = []

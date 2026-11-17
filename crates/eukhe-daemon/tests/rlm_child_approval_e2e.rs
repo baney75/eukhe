@@ -1,8 +1,11 @@
-//! End-to-end: a subagent's gated step asks the user of its root session. A subagent session has no client of its own; its
-//! `bash` step that writes (outside the user's auto set, narrowed here to
-//! `read`) hands the question up to its root through the supervisor, the
-//! root's attached client gets the `shell_approval` frame naming the
-//! subagent, and its approval lets the step run.
+//! End-to-end: a subagent's gated step asks the user of its root session
+//! while the user watches (`approvals.mode` `watch`). A subagent session
+//! has no client of its own; its `bash` step that writes (outside the
+//! user's auto set, narrowed here to `read`) hands the question up to its
+//! root through the supervisor, the root's attached client gets the
+//! `shell_approval` frame naming the subagent, and its approval lets the
+//! step run. Not watching, the same step waits in the root session's
+//! ledger, naming the subagent, and nobody is asked.
 #![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
@@ -107,25 +110,33 @@ fn script(path: &Path, responses: &Value) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Regression (G5): a subagent's gated step was denied unasked, since the
-/// subagent's own session has no client; the root's user could not answer.
-#[tokio::test(flavor = "multi_thread")]
-// One end-to-end story (root, subagent, question, answer, settle) reads
-// best as one body.
-#[allow(clippy::too_many_lines)]
-async fn a_subagent_step_runs_when_the_root_client_approves() {
+/// A root session the user's client attaches to, and its prompted
+/// subagent `scout`, whose model runs one bash step that writes, then
+/// answers. The user's auto set is `read`; `watch` sets `approvals.mode`.
+struct Story {
+    _dir: tempfile::TempDir,
+    _daemon: Daemon,
+    user: Client,
+    root_id: String,
+    work: std::path::PathBuf,
+    children: SupervisorChildSessions,
+}
+
+#[allow(clippy::too_many_lines)] // one setup, read top to bottom
+async fn start(watch: bool) -> Story {
     let dir = tempfile::TempDir::new().expect("temp dir");
     let socket = dir.path().join("daemon.sock");
     let agent_dir = dir.path().join("agent");
     let work = dir.path().join("work");
     std::fs::create_dir_all(&agent_dir).expect("agent dir");
     std::fs::create_dir_all(&work).expect("work dir");
+    let mode = if watch { "watch" } else { "end" };
     std::fs::write(
         agent_dir.join("settings.json"),
-        json!({ "shell": { "autoEffects": ["read"] } }).to_string(),
+        json!({ "shell": { "autoEffects": ["read"] }, "approvals": { "mode": mode } }).to_string(),
     )
     .expect("write settings");
-    let _daemon = Daemon::spawn_bound(
+    let daemon = Daemon::spawn_bound(
         supervisor_command(&socket, &agent_dir).env(
             eukhe_daemon::worker::WORKER_SUPERVISOR_LOST_EXIT_MS_ENV,
             "15000",
@@ -223,6 +234,50 @@ async fn a_subagent_step_runs_when_the_root_client_approves() {
         ))
         .await
         .expect("prompt the subagent");
+    Story {
+        _dir: dir,
+        _daemon: daemon,
+        user,
+        root_id,
+        work,
+        children,
+    }
+}
+
+/// How the subagent's run settled.
+async fn settled(children: &SupervisorChildSessions) -> RlmChildRunState {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let observation = children
+            .wait_settled(RlmChildWaitRequest {
+                session_id: CHILD_SESSION_ID.to_string(),
+                rlm_child_id: CHILD_ID.to_string(),
+                timeout_ms: 2_000,
+            })
+            .await
+            .expect("wait for the subagent");
+        match observation.state {
+            RlmChildRunState::Running | RlmChildRunState::Idle { .. } => {
+                assert!(Instant::now() < deadline, "the subagent never settled");
+            }
+            state @ (RlmChildRunState::Answered { .. } | RlmChildRunState::Failed { .. }) => {
+                return state;
+            }
+        }
+    }
+}
+
+/// Regression (G5): a subagent's gated step was denied unasked, since the
+/// subagent's own session has no client; the root's user could not answer.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subagent_step_runs_when_the_root_client_approves() {
+    let Story {
+        mut user,
+        root_id,
+        work,
+        children,
+        ..
+    } = start(true).await;
 
     // The question reaches the root's client, naming the subagent.
     let mut question = user.until(Duration::from_secs(90), |line| {
@@ -257,30 +312,69 @@ async fn a_subagent_step_runs_when_the_root_client_approves() {
     assert_eq!(answered["success"], true, "answer: {answered}");
 
     // The approved step ran, and the subagent finished.
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let settled = loop {
-        let observation = children
-            .wait_settled(RlmChildWaitRequest {
-                session_id: CHILD_SESSION_ID.to_string(),
-                rlm_child_id: CHILD_ID.to_string(),
-                timeout_ms: 2_000,
-            })
-            .await
-            .expect("wait for the subagent");
-        match observation.state {
-            RlmChildRunState::Running | RlmChildRunState::Idle { .. } => {
-                assert!(Instant::now() < deadline, "the subagent never settled");
-            }
-            state @ (RlmChildRunState::Answered { .. } | RlmChildRunState::Failed { .. }) => {
-                break state;
-            }
-        }
-    };
     assert_eq!(
-        settled,
+        settled(&children).await,
         RlmChildRunState::Answered {
             answer_preview: Some("done".to_string()),
         }
+    );
+    assert!(work.join("marker.txt").is_file(), "the approved step ran");
+}
+
+/// I4: not watching, a subagent's step outside the grant waits in the
+/// ROOT session's ledger naming the subagent; nobody is asked, the
+/// subagent goes on, and the root's approve runs the step.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_subagent_step_waits_in_the_root_ledger_naming_it_e2e() {
+    let Story {
+        mut user,
+        root_id,
+        work,
+        children,
+        ..
+    } = start(false).await;
+    assert_eq!(
+        settled(&children).await,
+        RlmChildRunState::Answered {
+            answer_preview: Some("done".to_string()),
+        }
+    );
+    let listed = user.request(
+        "l1",
+        &json!({ "type": "get_waiting_effects", "activeSessionId": root_id }),
+    );
+    assert_eq!(listed["success"], true, "get_waiting_effects: {listed}");
+    let effect = &listed["data"]["effects"][0];
+    assert_eq!(
+        (
+            listed["data"]["effects"].as_array().map(Vec::len),
+            effect["id"].clone(),
+            effect["command"].clone(),
+            effect["effects"].clone(),
+            effect["agent"].clone(),
+            effect["sessionId"].clone(),
+            effect["status"].clone(),
+            work.join("marker.txt").exists(),
+        ),
+        (
+            Some(1),
+            json!("w1"),
+            json!("touch marker.txt"),
+            json!(["write"]),
+            json!("scout"),
+            json!(CHILD_SESSION_ID),
+            json!("waiting"),
+            false,
+        )
+    );
+    let approved = user.request(
+        "y1",
+        &json!({ "type": "approve_waiting_effects", "activeSessionId": root_id, "which": "all" }),
+    );
+    assert_eq!(approved["success"], true, "approve: {approved}");
+    assert_eq!(
+        approved["data"]["ran"][0]["status"]["ran"]["ok"], true,
+        "{approved}"
     );
     assert!(work.join("marker.txt").is_file(), "the approved step ran");
 }

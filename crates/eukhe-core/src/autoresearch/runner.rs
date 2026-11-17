@@ -1,10 +1,12 @@
 //! One benchmark run: `bash autoresearch.sh` in the repository root,
 //! through the approval gate of the `bash` tool (the in-process
-//! [`Shell`] with the session's auto set, path policy and approval sink:
-//! a step that runs a program runs unasked only when `exec` is in
-//! `shell.autoEffects`), bounded by a timeout. Its stdout and stderr go
-//! to the run's `benchmark.log` as they arrive, and each whole line goes
-//! to the caller, which feeds it to the Lab.
+//! [`Shell`] with the session's auto set, approval mode, path policy and
+//! approval sink: a step that runs a program runs unasked only when
+//! `exec` is in `shell.autoEffects`; watching, the user is asked),
+//! bounded by a timeout. A step outside the auto set is not recorded
+//! waiting: a benchmark run belongs to the Lab, not to `/approve`. Its
+//! stdout and stderr go to the run's `benchmark.log` as they arrive, and
+//! each whole line goes to the caller, which feeds it to the Lab.
 
 use std::collections::HashMap;
 use std::fs::File;
@@ -15,6 +17,7 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use eukhe_shell::{End, Shell, Sink, Stream};
+use eukhe_types::effects::ApprovalMode;
 use eukhe_types::path_policy::PathPolicy;
 use eukhe_types::shell::AutoSet;
 use tokio::sync::mpsc;
@@ -31,10 +34,12 @@ pub(crate) const HARNESS: &str = "autoresearch.sh";
 pub(crate) const TIMEOUT_EXIT: i32 = 124;
 
 /// What the approval gate of one run needs: the environment of external
-/// steps, the auto set, the path policy, and who asks the user.
+/// steps, the auto set, the approval mode, the path policy, and who asks
+/// the user.
 pub(crate) struct RunGate {
     pub(crate) env: HashMap<String, String>,
     pub(crate) auto: AutoSet,
+    pub(crate) mode: ApprovalMode,
     pub(crate) paths: PathPolicy,
     pub(crate) approver: SinkApprover,
 }
@@ -127,11 +132,12 @@ pub(crate) async fn run(
             let RunGate {
                 env,
                 auto,
+                mode,
                 paths,
                 approver,
             } = gate;
             Shell::new(root, env, "bash")
-                .run(SCRIPT, auto, &paths, &approver, &*lines)
+                .run(SCRIPT, auto, mode, &paths, &approver, &*lines)
                 .await
         })
     };
@@ -169,11 +175,15 @@ pub(crate) async fn run(
     };
     Ok(match ran.end {
         End::Finished { status } | End::Exited { status } => RunEnd::Exited(status),
-        End::Refused {
-            command, refusal, ..
+        End::Refused { command, .. } => {
+            RunEnd::Refused(format!("`{command}` did not run: {}", RefusalText::DENIED))
+        }
+        End::Waits {
+            command, effects, ..
         } => RunEnd::Refused(format!(
-            "`{command}` did not run: {}",
-            RefusalText::of(refusal)
+            "`{command}` did not run: it needs the user's approval ({}). Ask the user to allow \
+             it in shell.autoEffects, or to watch the run (`/watch on`) and approve it",
+            effects.names()
         )),
     })
 }

@@ -1,12 +1,12 @@
 //! The `bash` tool under the S2 limits: its output bounded by the call's
 //! truncation (whole under the opt-out), and a script past the blocking
 //! budget detached as a job whose end settles it and whose kill stops it.
-//! The gate's refusal texts, and the default auto set against the
-//! compiled core's (`bend/approvals.bend` `default_auto`). A crash
-//! mid-script never runs it again (`effect_once`).
+//! The default auto set against the compiled core's
+//! (`bend/approvals.bend` `default_auto`); an irreversible step waits in
+//! the ledger, or, watching, is asked. A crash mid-script never runs it
+//! again (`effect_once`).
 
 use std::future::Future;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -74,6 +74,7 @@ async fn transcript_of(script: &str, truncation: Truncation) -> (String, Option<
         .run(
             script,
             AutoSet::new([ShellEffect::Read]),
+            eukhe_types::effects::ApprovalMode::End,
             &paths,
             &Never,
             &transcript,
@@ -364,39 +365,6 @@ async fn a_resume_never_runs_a_bash_call_a_crash_interrupted_again() {
     session.close(cx()).await.expect("close");
 }
 
-/// Each answer of the approval sink that is not a yes becomes its
-/// refusal's text, and each text ends with a next step for the model.
-#[test]
-fn every_refusal_text_names_what_failed_and_the_next_step() {
-    let next = [Refusal::Denied, Refusal::Unanswered]
-        .map(|refusal| RefusalText::of(refusal).next.is_empty());
-    let texts = [
-        ShellAnswer::Approve,
-        ShellAnswer::Deny,
-        ShellAnswer::Unanswered,
-    ]
-    .map(|answer| RefusalText::of_answer(answer).map(|text| text.to_string()));
-    assert_eq!(
-        (next, texts),
-        (
-            [false, false],
-            [
-                None,
-                Some(
-                    "the user denied it. Do not try it again unless the user asks for it."
-                        .to_owned()
-                ),
-                Some(
-                    "not approved: it needs the user's approval, and no client answered. Ask the \
-user to attach a client, or to allow its effect in shell.autoEffects if that is read, write, \
-exec, net, outside, protected or secret; or use read-only steps."
-                        .to_owned()
-                ),
-            ]
-        )
-    );
-}
-
 /// The auto set of a session whose user sets no `shell.autoEffects` is
 /// the compiled core's default (`bend/approvals.bend` `default_auto`, law
 /// `default_auto_is_reversible`): read, write, exec.
@@ -411,54 +379,156 @@ async fn the_default_auto_set_is_its_model() {
     session.close(cx()).await.expect("close");
 }
 
-/// Regression: the default auto set held only read, write, exec and net,
-/// so in a session whose user set none, a write outside the workspace
-/// asked, and a subagent writing its notes to /tmp stopped every turn
-/// for a yes. Now every effect runs unasked: with no client
-/// to answer, the whole script runs.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn with_no_auto_set_a_write_outside_the_workspace_runs_unasked() {
+/// The script of the gate tests: a write inside, one outside the
+/// workspace (irreversible under the default grant), one inside.
+const OUTSIDE: &str = "echo one > one.txt\necho three > ../three.txt\necho four > four.txt";
+
+/// What a run of [`OUTSIDE`] left: the call's result text, the ledger's
+/// effects (id, command, effects, status), and which files exist.
+type Outcome = (
+    String,
+    Vec<(
+        String,
+        String,
+        Vec<ShellEffect>,
+        eukhe_types::effects::WaitingStatus,
+    )>,
+    [bool; 3],
+);
+
+/// Run [`OUTSIDE`] in a session with `settings` and the approval sink
+/// `answer` (none: no client).
+async fn run_outside(settings: Value, answer: Option<ShellAnswer>) -> Outcome {
     let fixture = Fixture::new();
-    fixture.faux.set_responses(vec![
-        bash(
-            "b1",
-            "echo one > one.txt\nsh -c 'echo two > two.txt'\necho three > ../three.txt\necho four > four.txt",
-        ),
-        text("done"),
-    ]);
+    std::fs::write(
+        fixture.dir.path().join("agent").join("settings.json"),
+        settings.to_string(),
+    )
+    .expect("settings");
+    fixture
+        .faux
+        .set_responses(vec![bash("b1", OUTSIDE), text("done")]);
     let session = fixture
-        .open_configured(|config| config.shell_approval = None)
+        .open_configured(move |config| {
+            config.shell_approval = answer.map(|answer| {
+                let sink: ShellApprovalSink =
+                    Arc::new(move |_| Box::pin(std::future::ready(answer)));
+                sink
+            });
+        })
         .await;
     let id = submit(&session, "go").await;
     tokio::time::timeout(Duration::from_millis(WAIT_MS), settle(&session, id))
         .await
         .expect("the turn ends");
+    let ledger = eukhe_durable::harness::effects::read_waiting_effects(
+        session.harness(),
+        session.root().id(),
+        cx(),
+    )
+    .await
+    .expect("the ledger reads");
     let work = fixture.dir.path().join("work");
-    let read = |path: PathBuf| std::fs::read_to_string(path).ok();
-    assert_eq!(
-        (
-            results(&entries(&session).await)
-                .iter()
-                .map(result_text)
-                .collect::<Vec<_>>(),
-            read(work.join("one.txt")),
-            read(work.join("two.txt")),
-            read(fixture.dir.path().join("three.txt")),
-            read(work.join("four.txt")),
-        ),
-        (
-            vec![
-                "$ echo one >one.txt\n$ sh -c 'echo two > two.txt'\n$ echo three >../three.txt\n$ \
-echo four >four.txt\n"
-                    .to_owned()
-            ],
-            Some("one\n".to_owned()),
-            Some("two\n".to_owned()),
-            Some("three\n".to_owned()),
-            Some("four\n".to_owned()),
-        )
+    let outcome = (
+        results(&entries(&session).await)
+            .iter()
+            .map(result_text)
+            .collect::<Vec<_>>()
+            .join("\n"),
+        ledger
+            .into_iter()
+            .map(|effect| (effect.id, effect.command, effect.effects, effect.status))
+            .collect(),
+        [
+            work.join("one.txt").exists(),
+            fixture.dir.path().join("three.txt").exists(),
+            work.join("four.txt").exists(),
+        ],
     );
     session.close(cx()).await.expect("close");
+    outcome
+}
+
+/// The ledger entry of the outside write, waiting.
+fn outside_waits() -> (
+    String,
+    String,
+    Vec<ShellEffect>,
+    eukhe_types::effects::WaitingStatus,
+) {
+    (
+        "w1".to_owned(),
+        "echo three >../three.txt".to_owned(),
+        vec![ShellEffect::Write, ShellEffect::Outside],
+        eukhe_types::effects::WaitingStatus::Waiting,
+    )
+}
+
+const WAITS_TEXT: &str = "$ echo one >one.txt\n[waiting for the user's approval: step 1 \
+(write+outside) `echo three >../three.txt` is w1; it and the steps after it did not run. \
+Continue with the rest of the work; do not try another way to do it.]\n";
+
+/// Under the default grant a write outside the workspace is irreversible:
+/// nobody is asked, it waits in the ledger as w1, the model reads so, and
+/// the steps after it did not run.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn with_the_default_grant_an_outside_write_waits_unasked() {
+    assert_eq!(
+        run_outside(json!({}), Some(ShellAnswer::Approve)).await,
+        (
+            WAITS_TEXT.to_owned(),
+            vec![outside_waits()],
+            [true, false, false]
+        )
+    );
+}
+
+/// A granted effect runs unasked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_granted_outside_write_runs() {
+    let granted = json!({ "shell": { "autoEffects": ["read", "write", "exec", "outside"] } });
+    assert_eq!(
+        run_outside(granted, None).await,
+        (
+            "$ echo one >one.txt\n$ echo three >../three.txt\n$ echo four >four.txt\n".to_owned(),
+            Vec::new(),
+            [true, true, true]
+        )
+    );
+}
+
+/// Watching, the step is asked: a yes runs it, a no refuses it (nothing
+/// waits), no answer leaves it waiting.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn watching_asks_a_yes_runs_a_no_refuses_silence_waits() {
+    let watch = || json!({ "approvals": { "mode": "watch" } });
+    let ran = run_outside(watch(), Some(ShellAnswer::Approve)).await;
+    let denied = run_outside(watch(), Some(ShellAnswer::Deny)).await;
+    let unanswered = run_outside(watch(), Some(ShellAnswer::Unanswered)).await;
+    assert_eq!(
+        [ran, denied, unanswered],
+        [
+            (
+                "$ echo one >one.txt\n$ echo three >../three.txt\n$ echo four >four.txt\n"
+                    .to_owned(),
+                Vec::new(),
+                [true, true, true]
+            ),
+            (
+                "$ echo one >one.txt\n[stopped at step 1 (write+outside): `echo three \
+                 >../three.txt` and the steps after it did not run: the user denied it. Do not \
+                 try it again unless the user asks for it.]\n"
+                    .to_owned(),
+                Vec::new(),
+                [true, false, false]
+            ),
+            (
+                WAITS_TEXT.to_owned(),
+                vec![outside_waits()],
+                [true, false, false]
+            ),
+        ]
+    );
 }
 
 #[test]

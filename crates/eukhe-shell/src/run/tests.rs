@@ -8,6 +8,10 @@ use ShellEffect::{Exec, Net, Outside, Protected, Read, Secret, Write};
 
 use super::*;
 
+/// The tests of asking run watching: every step outside the auto set is
+/// asked.
+const WATCH: ApprovalMode = ApprovalMode::Watch;
+
 /// Answers the gated steps in order from a list (none left: no answer)
 /// and keeps every question.
 struct Scripted {
@@ -183,6 +187,7 @@ async fn approved_steps_run_and_a_denial_stops_the_script() {
         .run(
             "cat notes | grep -c o\necho made > out.txt && cat out.txt\ncurl https://example.com\ntouch never",
             AutoSet::new([Read]),
+            WATCH,
             &bench.paths(),
             &approver,
             &record,
@@ -208,7 +213,6 @@ async fn approved_steps_run_and_a_denial_stops_the_script() {
                 step: 4,
                 command: "curl https://example.com".to_string(),
                 effects: ShellEffects::of(&[Net]),
-                refusal: Refusal::Denied,
             },
         )
     );
@@ -241,6 +245,7 @@ async fn shell_state_chains_and_external_programs() {
         .run(
             "cd sub; export WHO=me; X=1; false || echo \"$WHO $X $?\"; tool a 'b c' 2>&1; missing-program; exit 3; echo after",
             AutoSet::new([Read, Exec]),
+            WATCH,
             &bench.paths(),
             &approver,
             &record,
@@ -287,6 +292,7 @@ async fn a_script_outside_the_grammar_is_one_step_with_every_effect_it_holds() {
         .run(
             script,
             AutoSet::new([Read]),
+            WATCH,
             &bench.paths(),
             &Scripted::new([]),
             &Record::default(),
@@ -297,11 +303,11 @@ async fn a_script_outside_the_grammar_is_one_step_with_every_effect_it_holds() {
         unanswered,
         Ran {
             steps: Vec::new(),
-            end: End::Refused {
+            end: End::Waits {
                 step: 0,
                 command: command.clone(),
                 effects: ShellEffects::of(&[Read, Exec]),
-                refusal: Refusal::Unanswered,
+                cwd: bench.shell().cwd().to_path_buf(),
             },
         }
     );
@@ -311,6 +317,7 @@ async fn a_script_outside_the_grammar_is_one_step_with_every_effect_it_holds() {
         .run(
             script,
             AutoSet::new([Read]),
+            WATCH,
             &bench.paths(),
             &Scripted::new([Answer::Approve]),
             &record,
@@ -344,9 +351,14 @@ async fn a_pipeline_ends_when_its_last_command_stops_reading() {
     let record = Record::default();
     let got = tokio::time::timeout(
         Duration::from_secs(10),
-        bench
-            .shell()
-            .run("yes | head -n 3", auto, &paths, &Scripted::new([]), &record),
+        bench.shell().run(
+            "yes | head -n 3",
+            auto,
+            WATCH,
+            &paths,
+            &Scripted::new([]),
+            &record,
+        ),
     )
     .await
     .expect("`yes | head -n 3` ends");
@@ -366,6 +378,7 @@ async fn a_pipeline_ends_when_its_last_command_stops_reading() {
         bench.shell().run(
             "yes | cat | head -n 2",
             auto,
+            WATCH,
             &paths,
             &Scripted::new([]),
             &record,
@@ -398,6 +411,7 @@ async fn a_refused_command_runs_none_of_its_pipeline() {
         .run(
             "echo first; yes | tool x",
             AutoSet::new([Read]),
+            WATCH,
             &bench.paths(),
             &approver,
             &Record::default(),
@@ -411,7 +425,6 @@ async fn a_refused_command_runs_none_of_its_pipeline() {
                 step: 2,
                 command: "tool x".to_string(),
                 effects: ShellEffects::of(&[Exec]),
-                refusal: Refusal::Denied,
             }
         )
     );
@@ -432,6 +445,7 @@ async fn every_effect_of_a_step_must_be_allowed() {
         .run(
             "curl x > got; touch ../out; touch ../guard/g; cat ../keys/id; cp ../keys/id copy",
             AutoSet::new(ShellEffect::ALL),
+            WATCH,
             &bench.paths(),
             &approver,
             &Record::default(),
@@ -444,6 +458,7 @@ async fn every_effect_of_a_step_must_be_allowed() {
         .run(
             "curl x > got; touch ../out; touch ../guard/g; cat ../keys/id; cp ../keys/id copy",
             AutoSet::new([Read, Net]),
+            WATCH,
             &bench.paths(),
             &asked,
             &Record::default(),
@@ -460,11 +475,11 @@ async fn every_effect_of_a_step_must_be_allowed() {
                 ShellEffects::of(&[Read, Secret]),
                 ShellEffects::of(&[Write, Secret]),
             ],
-            End::Refused {
+            End::Waits {
                 step: 4,
                 command: "cp ../keys/id copy".to_string(),
                 effects: ShellEffects::of(&[Write, Secret]),
-                refusal: Refusal::Unanswered,
+                cwd: bench.shell().cwd().to_path_buf(),
             }
         )
     );
@@ -485,6 +500,7 @@ async fn only_a_step_that_reads_its_working_directory_reads_a_secret_in_it() {
         .run(
             "echo hi; date; git -C work log; ls work; rg x work; ls; rg x; grep -r x; find -name x; du",
             AutoSet::new([Read]),
+            WATCH,
             &bench.paths(),
             &asked,
             &Record::default(),
@@ -520,6 +536,7 @@ async fn a_shallow_ls_of_a_secret_holding_directory_reads_no_secret() {
         .run(
             "ls .; ls keys; ls -R .; find .; rg x .; cat keys/id",
             AutoSet::new([Read]),
+            WATCH,
             &bench.paths(),
             &asked,
             &Record::default(),
@@ -539,5 +556,55 @@ async fn a_shallow_ls_of_a_secret_holding_directory_reads_no_secret() {
                 .collect(),
             6
         )
+    );
+}
+
+/// The default mode asks nobody: an irreversible step waits, with the
+/// steps after it, and the steps before it ran; a granted effect runs.
+#[tokio::test]
+async fn an_irreversible_step_waits_unasked_and_a_granted_one_runs() {
+    let bench = Bench::new();
+    let approver = Scripted::new([Answer::Approve]);
+    let script = "touch made; curl https://example.com; touch never";
+    let record = Record::default();
+    let got = bench
+        .shell()
+        .run(
+            script,
+            AutoSet::new([Read, Write, Exec]),
+            ApprovalMode::End,
+            &bench.paths(),
+            &approver,
+            &record,
+        )
+        .await;
+    assert_eq!(
+        (seen(&got, &record), got.end, approver.asked.lock().len()),
+        (
+            vec![ran(0, "touch made", &[Write], Approval::Auto, "", 0)],
+            End::Waits {
+                step: 1,
+                command: "curl https://example.com".to_string(),
+                effects: ShellEffects::of(&[Net]),
+                cwd: bench.shell().cwd().to_path_buf(),
+            },
+            0
+        )
+    );
+    assert!(!bench.work().join("never").exists());
+    let granted = bench
+        .shell()
+        .run(
+            script,
+            AutoSet::new([Read, Write, Exec, Net]),
+            ApprovalMode::End,
+            &bench.paths(),
+            &approver,
+            &Record::default(),
+        )
+        .await;
+    assert_eq!(
+        (granted.steps.len(), granted.end),
+        (3, End::Finished { status: 0 })
     );
 }

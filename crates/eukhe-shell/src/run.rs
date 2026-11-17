@@ -18,7 +18,9 @@ use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-use eukhe_bend::rules::shell::{self as gate, Answered, Gate, Part, Said};
+use eukhe_bend::rules::irreversible::{self as irreversible, Declared, Fate, Mode, Route, Said};
+use eukhe_bend::rules::shell::{self as gate, Part};
+use eukhe_types::effects::ApprovalMode;
 use eukhe_types::path_policy::{resolve, PathClass, PathPolicy};
 use eukhe_types::shell::{AutoSet, ShellEffect, ShellEffects};
 use tokio::io::AsyncReadExt as _;
@@ -48,11 +50,11 @@ pub struct Ask {
 pub enum Answer {
     Approve,
     Deny,
-    /// No one answered: a denial.
+    /// No one answered: the step waits for `/approve`.
     Unanswered,
 }
 
-/// Asks the user whether a gated step may run.
+/// Asks the user whether a gated step may run (watch mode only).
 ///
 /// Implementations ask whoever can answer (the attached client) and
 /// resolve when the answer arrives; with no one to ask they resolve
@@ -85,7 +87,7 @@ pub trait Sink: Sync {
 pub enum Approval {
     /// Its effects are within the auto set.
     Auto,
-    /// The user approved it.
+    /// The user approved it while watching.
     Approved,
 }
 
@@ -100,27 +102,29 @@ pub struct StepRun {
     pub status: i32,
 }
 
-/// Why a gated step did not run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Refusal {
-    Denied,
-    Unanswered,
-}
-
 /// How a script ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum End {
-    /// No step was refused; `status` is the last step's.
+    /// No step was stopped; `status` is the last step's.
     Finished { status: i32 },
     /// A step ran `exit`.
     Exited { status: i32 },
-    /// The user did not approve this step: it, every later step, and the
-    /// other steps of its pipeline did not run.
+    /// The user denied this step: it, every later step, and the other
+    /// steps of its pipeline did not run.
     Refused {
         step: u64,
         command: String,
         effects: ShellEffects,
-        refusal: Refusal,
+    },
+    /// This step is irreversible: it waits for the user's approval after
+    /// the run (or nobody answered while watching). It, every later step,
+    /// and the other steps of its pipeline did not run; `cwd` is where it
+    /// runs once approved.
+    Waits {
+        step: u64,
+        command: String,
+        effects: ShellEffects,
+        cwd: PathBuf,
     },
 }
 
@@ -148,7 +152,7 @@ struct Planned {
     /// The step as it will run, for people.
     command: String,
     effects: ShellEffects,
-    gate: Gate,
+    route: Route,
 }
 
 /// Where a command's fd 1 or fd 2 goes.
@@ -239,6 +243,21 @@ pub struct Shell {
     external: PathBuf,
 }
 
+/// The effects of a step made of `parts` (the compiled core joins them)
+/// and where it goes under `auto` and `mode`: it runs, waits, or is
+/// asked.
+fn routed(auto: AutoSet, mode: ApprovalMode, parts: &[Part]) -> (ShellEffects, Route) {
+    let (effects, _) = gate::step(auto, parts);
+    let mode = match mode {
+        ApprovalMode::End => Mode::End,
+        ApprovalMode::Watch => Mode::Watch,
+    };
+    (
+        effects,
+        irreversible::route(auto, Declared::Effects(effects), mode),
+    )
+}
+
 /// A pipe whose read end streams to the sink as `stream` of `step`; the
 /// write end.
 fn capture(
@@ -300,16 +319,18 @@ impl Shell {
         &self.cwd
     }
 
-    /// Run `script`: each step whose effects are all in `auto` runs,
-    /// every other step runs only when `approver` approves it; the first
-    /// step it does not approve ends the script. `paths` classes the
-    /// paths a step names (each effect gates the same way: the user's
-    /// auto set decides). The output streams to `sink`.
+    /// Run `script`: each step whose effects are all in `auto` runs; any
+    /// other step is irreversible: under [`ApprovalMode::End`] it waits
+    /// for the user's approval after the run, unasked; under
+    /// [`ApprovalMode::Watch`] `approver` asks (no answer: it waits). The
+    /// first step that does not run ends the script. `paths` classes the
+    /// paths a step names. The output streams to `sink`.
     #[tracing::instrument(level = "debug", skip_all, fields(cwd = %self.cwd.display()))]
     pub async fn run(
         &mut self,
         script: &str,
         auto: AutoSet,
+        mode: ApprovalMode,
         paths: &PathPolicy,
         approver: &impl Approver,
         sink: &impl Sink,
@@ -329,7 +350,7 @@ impl Shell {
                     let (assigns, mut argv, redirects) = self.expand(&part);
                     parts.extend(self.parts(&assigns, &mut argv, &redirects, paths));
                 }
-                let (effects, gate) = gate::step(auto, &parts);
+                let (effects, route) = routed(auto, mode, &parts);
                 let argv = vec![
                     self.external.display().to_string(),
                     "-c".to_string(),
@@ -347,7 +368,7 @@ impl Shell {
                     redirects: Vec::new(),
                     command,
                     effects,
-                    gate,
+                    route,
                 };
                 let end = self.pipeline(vec![whole], approver, sink, &mut steps).await;
                 return Ran {
@@ -359,7 +380,7 @@ impl Shell {
             }
         };
         for chain in &list {
-            let planned = self.plan(&chain.first, steps.len() as u64, auto, paths);
+            let planned = self.plan(&chain.first, steps.len() as u64, (auto, mode), paths);
             if let Some(end) = self.pipeline(planned, approver, sink, &mut steps).await {
                 return Ran { steps, end };
             }
@@ -369,7 +390,7 @@ impl Shell {
                     Link::Or => self.status != 0,
                 };
                 if runs {
-                    let planned = self.plan(pipeline, steps.len() as u64, auto, paths);
+                    let planned = self.plan(pipeline, steps.len() as u64, (auto, mode), paths);
                     if let Some(end) = self.pipeline(planned, approver, sink, &mut steps).await {
                         return Ran { steps, end };
                     }
@@ -508,14 +529,17 @@ impl Shell {
         &self,
         pipeline: &Pipeline,
         first: u64,
-        auto: AutoSet,
+        (auto, mode): (AutoSet, ApprovalMode),
         paths: &PathPolicy,
     ) -> Vec<Planned> {
         let mut planned = Vec::with_capacity(pipeline.commands.len());
         for (step, command) in (first..).zip(&pipeline.commands) {
             let (assigns, mut argv, redirects) = self.expand(command);
-            let (effects, gate) =
-                gate::step(auto, &self.parts(&assigns, &mut argv, &redirects, paths));
+            let (effects, route) = routed(
+                auto,
+                mode,
+                &self.parts(&assigns, &mut argv, &redirects, paths),
+            );
             let mut words: Vec<String> = assigns
                 .iter()
                 .map(|(name, value)| format!("{name}={}", quote(value)))
@@ -548,7 +572,7 @@ impl Shell {
                 redirects,
                 command: words.join(" "),
                 effects,
-                gate,
+                route,
             });
         }
         planned
@@ -566,30 +590,36 @@ impl Shell {
     ) -> Option<End> {
         let mut approvals = Vec::with_capacity(planned.len());
         for stage in &planned {
-            let approval = match stage.gate {
-                Gate::Unasked => Approval::Auto,
-                Gate::Asks => {
+            let waits = || {
+                Some(End::Waits {
+                    step: stage.step,
+                    command: stage.command.clone(),
+                    effects: stage.effects,
+                    cwd: self.cwd.clone(),
+                })
+            };
+            let approval = match stage.route {
+                Route::Runs => Approval::Auto,
+                Route::Waits => return waits(),
+                Route::Asks => {
                     let ask = Ask {
                         step: stage.step,
                         command: stage.command.clone(),
                         effects: stage.effects,
                     };
-                    let answer = approver.approve(ask).await;
-                    let said = match answer {
+                    let said = match approver.approve(ask).await {
                         Answer::Approve => Said::Yes,
-                        Answer::Deny | Answer::Unanswered => Said::No,
+                        Answer::Deny => Said::No,
+                        Answer::Unanswered => Said::Silent,
                     };
-                    match gate::answered(stage.step, said) {
-                        Answered::Runs => Approval::Approved,
-                        Answered::Stops { step } => {
+                    match irreversible::settle(said) {
+                        Fate::Runs => Approval::Approved,
+                        Fate::Waits => return waits(),
+                        Fate::Refused => {
                             return Some(End::Refused {
-                                step,
+                                step: stage.step,
                                 command: stage.command.clone(),
                                 effects: stage.effects,
-                                refusal: match answer {
-                                    Answer::Unanswered => Refusal::Unanswered,
-                                    Answer::Approve | Answer::Deny => Refusal::Denied,
-                                },
                             });
                         }
                     }

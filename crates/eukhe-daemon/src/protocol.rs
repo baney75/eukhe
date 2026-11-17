@@ -164,6 +164,10 @@ pub const KNOWN_COMMAND_TYPES: &[&str] = &[
     "headless_parent_receipt",
     "get_unknown_effects",
     "resolve_unknown_effect",
+    "get_waiting_effects",
+    "approve_waiting_effects",
+    "set_approval_mode",
+    "relay_waiting_effect",
     "get_budget",
     "set_budget",
     "set_budget_limits",
@@ -919,6 +923,18 @@ pub fn command_active_session_id(command: &DaemonCommand) -> Option<&str> {
         | DaemonCommand::GetUnknownEffects {
             active_session_id, ..
         }
+        | DaemonCommand::GetWaitingEffects {
+            active_session_id, ..
+        }
+        | DaemonCommand::ApproveWaitingEffects {
+            active_session_id, ..
+        }
+        | DaemonCommand::SetApprovalMode {
+            active_session_id, ..
+        }
+        | DaemonCommand::RelayWaitingEffect {
+            active_session_id, ..
+        }
         | DaemonCommand::ResolveUnknownEffect {
             active_session_id, ..
         }
@@ -1149,6 +1165,10 @@ pub fn command_type_name(command: &DaemonCommand) -> &'static str {
         DaemonCommand::GetRunOutcome { .. } => "get_run_outcome",
         DaemonCommand::GetUnknownEffects { .. } => "get_unknown_effects",
         DaemonCommand::ResolveUnknownEffect { .. } => "resolve_unknown_effect",
+        DaemonCommand::GetWaitingEffects { .. } => "get_waiting_effects",
+        DaemonCommand::ApproveWaitingEffects { .. } => "approve_waiting_effects",
+        DaemonCommand::SetApprovalMode { .. } => "set_approval_mode",
+        DaemonCommand::RelayWaitingEffect { .. } => "relay_waiting_effect",
         DaemonCommand::SetAcceptance { .. } => "set_acceptance",
         DaemonCommand::GetAcceptance { .. } => "get_acceptance",
         DaemonCommand::GetSystemPrompt { .. } => "get_system_prompt",

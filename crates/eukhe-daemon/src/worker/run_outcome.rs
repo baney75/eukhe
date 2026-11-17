@@ -344,6 +344,7 @@ mod tests {
             active: None,
             goal: serde_json::Value::Null,
             unknown_effects: Vec::new(),
+            waiting_effects: Vec::new(),
             loop_status: None,
             acceptance: serde_json::Value::Null,
             workers: Vec::new(),

@@ -63,6 +63,7 @@ fn lab(home: &Path, cwd: &Path) -> Autoresearch {
                     .copied()
                     .filter(|effect| !matches!(effect, ShellEffect::Secret)),
             ),
+            mode: eukhe_types::effects::ApprovalMode::End,
             paths: PathPolicy::new(vec![root.clone()], Vec::new(), Vec::new()),
             approver: SinkApprover {
                 sink: None,

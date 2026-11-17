@@ -7,6 +7,11 @@ use eukhe_types::shell::{AutoSet, ShellEffect};
 
 use super::*;
 
+/// A recorder that gives every effect the id `w1` and records nothing.
+fn recorder() -> Recorder {
+    Recorder::numbering_w1()
+}
+
 /// Regression (audit C2): every file the settings loaders read, and the
 /// auth store, is Protected or Secret, so for a user whose auto set
 /// lacks the file's effect no agent write to it runs without the user's
@@ -130,9 +135,9 @@ fn every_state_part_is_protected_or_secret() {
 /// to `ws/x` with no link left, but its links looped, so its class is
 /// Outside (`laws/path_policy/policy.bend`, `Pp.class`). The gate judged a second
 /// resolution of `ws/x`, which lost the loop: the write ran unasked as
-/// Inside.
+/// Inside. Outside the auto set, it waits for the user's approval.
 #[test]
-fn a_write_whose_links_looped_asks_even_when_its_real_path_is_inside() {
+fn a_write_whose_links_looped_waits_even_when_its_real_path_is_inside() {
     let dir = tempfile::tempdir().unwrap();
     let ws = dir.path().canonicalize().unwrap();
     std::os::unix::fs::symlink("a", ws.join("a")).unwrap();
@@ -142,8 +147,16 @@ fn a_write_whose_links_looped_asks_even_when_its_real_path_is_inside() {
     let gate = DocumentsGate {
         policy: PathPolicy::new(vec![ws.clone()], Vec::new(), Vec::new()),
         auto: AutoSet::new([ShellEffect::Read, ShellEffect::Write]),
+        mode: ApprovalMode::End,
         sink: None,
+        recorder: recorder(),
         call: "call".to_owned(),
+        rerun: Rerun {
+            function: "write",
+            cwd: ws.clone(),
+            args: serde_json::json!({ "path": "a/../x", "content": "text" }),
+        },
+        allowed: Allowed::Gated,
         asked: AtomicU64::new(0),
         runtime: runtime.handle().clone(),
     };
@@ -161,12 +174,11 @@ fn a_write_whose_links_looped_asks_even_when_its_real_path_is_inside() {
     assert_eq!(
         (written, ws.join("x").exists()),
         (
-            Err(
-                "(write+outside) not approved: it needs the user's approval, and no client \
-answered. Ask the user to attach a client, or to allow its effect in shell.autoEffects if that \
-is read, write, exec, net, outside, protected or secret; or use read-only steps."
-                    .to_owned()
-            ),
+            Err(format!(
+                "[waiting for the user's approval: `write {}` (write+outside) is w1; it did not \
+                 run. Continue with the rest of the work; do not try another way to do it.]",
+                ws.join("x").display()
+            )),
             false
         )
     );

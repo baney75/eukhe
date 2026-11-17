@@ -7,6 +7,7 @@
 
 pub mod acceptance;
 mod admission_gate;
+pub mod approve;
 pub mod bounded_output;
 pub mod branch_summary;
 pub mod budget;
@@ -27,6 +28,7 @@ mod import;
 pub mod jobs;
 pub mod loop_mode;
 mod main_conversation;
+mod mcp_gate;
 pub mod messages;
 mod models;
 pub mod observe;
@@ -46,6 +48,7 @@ mod staging;
 mod state_tree;
 mod tool_contract;
 pub mod tool_surface;
+mod waiting;
 pub mod workflow;
 
 pub use admission_gate::AdmissionStateSink;
@@ -53,7 +56,7 @@ pub use deps::{
     HarnessCell, HostCall, HostCallHandler, HostDeps, HostRequestRegistry, JobSettledSink,
     LateAgentMessageSink, McpLogin, ModelRequest, OpenedSession, ParentLink, PromptConfig,
     ServiceStart, ServiceStop, SessionConfig, SessionHost, SessionRole, SessionShape,
-    SessionStorage, ShellApprovalSink, StoredWork, SummaryDeltaSink,
+    SessionStorage, ShellApprovalSink, StoredWork, SummaryDeltaSink, WaitingSink,
 };
 pub use discovery::{
     list_sessions, most_recent_session_for_cwd, read_main_transcript, read_session_cwd,
@@ -96,3 +99,4 @@ pub use settings::{
 };
 pub use staging::{sweep_stale_staging_dirs, StagingSweep};
 pub use state_tree::{LiveStateTree, TreeCursor};
+pub use waiting::record_waiting_effect;

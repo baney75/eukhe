@@ -380,6 +380,11 @@ pub fn event_to_update(event: &SessionEvent) -> TurnUpdate {
         SessionEvent::UnknownEffectsUpdate { effects } => {
             TurnUpdate::UnknownEffectsUpdate(effects.clone())
         }
+        // The TUI's waiting-effects view and end-of-run message are the
+        // surfaces branch's: until then these change nothing shown.
+        SessionEvent::WaitingEffectsUpdate { .. } | SessionEvent::RunWaiting { .. } => {
+            TurnUpdate::StatusUpdate
+        }
         SessionEvent::LoopUpdate { r#loop } => TurnUpdate::LoopUpdate(r#loop.clone()),
         SessionEvent::BudgetUpdate { budget } => {
             TurnUpdate::BudgetUpdate(budget.clone().map(Box::new))

@@ -72,6 +72,7 @@ fn gate(deps: &Weak<HostDeps>, request: &str) -> RunGate {
         Some(deps) => RunGate {
             env: local_env(&session_env(&deps)),
             auto: auto_set(&deps.settings),
+            mode: deps.settings.manager().get_approval_mode(),
             paths: crate::durable::path_policy::session_policy(
                 &deps.agent_dir,
                 &deps.settings,
@@ -86,6 +87,7 @@ fn gate(deps: &Weak<HostDeps>, request: &str) -> RunGate {
         None => RunGate {
             env: std::collections::HashMap::new(),
             auto: eukhe_types::shell::AutoSet::default(),
+            mode: eukhe_types::effects::ApprovalMode::End,
             paths: eukhe_types::path_policy::PathPolicy::new(Vec::new(), Vec::new(), Vec::new()),
             approver: SinkApprover { sink: None, call },
         },

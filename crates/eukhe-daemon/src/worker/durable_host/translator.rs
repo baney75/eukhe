@@ -681,6 +681,8 @@ impl EventTranslator {
                 | SessionEvent::SessionActionUpdate { .. }
                 | SessionEvent::GoalUpdate { .. }
                 | SessionEvent::UnknownEffectsUpdate { .. }
+                | SessionEvent::WaitingEffectsUpdate { .. }
+                | SessionEvent::RunWaiting { .. }
                 | SessionEvent::LoopUpdate { .. }
                 | SessionEvent::BudgetUpdate { .. }
                 | SessionEvent::PlanUsage { .. }

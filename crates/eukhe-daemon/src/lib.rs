@@ -120,6 +120,7 @@ pub mod timeouts;
 pub mod types;
 pub(crate) mod user_bash;
 pub mod util;
+pub(crate) mod waiting_relay;
 pub(crate) mod work_gate;
 pub mod worker;
 pub(crate) mod worker_stderr;

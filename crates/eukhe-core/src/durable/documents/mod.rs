@@ -22,13 +22,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Weak};
 
+use eukhe_chord::context::BACKGROUND_CONTEXT;
 use eukhe_docs::Documents;
 use eukhe_durable::harness::define::define_extension;
 use eukhe_durable::harness::types::{Extension, ToolExecutionApi};
 
 use self::contract::Function;
-use super::path_policy::{session_policy, DocumentsGate};
+use self::requests::{perform, Caller};
+use super::path_policy::{session_policy, Allowed, DocumentsGate, Rerun};
 use super::settings::EukheSettings;
+use super::waiting::Recorder;
 use super::{HostDeps, ShellApprovalSink};
 use crate::memory::Memory;
 use crate::resources::LoadedResources;
@@ -61,25 +64,103 @@ pub(crate) struct GateInputs {
     pub(crate) agent_dir: PathBuf,
     pub(crate) settings: Arc<EukheSettings>,
     pub(crate) sink: Option<ShellApprovalSink>,
+    pub(crate) recorder: Recorder,
 }
 
 impl DocumentsHost {
     /// The gate of one call working in `workspace`: the session's path
-    /// policy, its auto set and its approval sink; each question's id
+    /// policy, its auto set, approval mode and sink; each question's id
     /// starts with the id of `api`'s tool call (a kernel request without
-    /// one: a fresh id).
-    fn gate(&self, workspace: &Path, api: Option<&dyn ToolExecutionApi>) -> DocumentsGate {
+    /// one: a fresh id). An access that waits is recorded with `rerun`.
+    fn gate(
+        &self,
+        workspace: &Path,
+        api: Option<&dyn ToolExecutionApi>,
+        rerun: Rerun,
+        allowed: Allowed,
+    ) -> DocumentsGate {
         DocumentsGate {
             policy: session_policy(&self.gate.agent_dir, &self.gate.settings, workspace),
             auto: super::shell::auto_set(&self.gate.settings),
+            mode: self.gate.settings.manager().get_approval_mode(),
             sink: self.gate.sink.clone(),
+            recorder: self.gate.recorder.clone(),
             call: api.map_or_else(
                 || format!("fs-{}", uuid::Uuid::new_v4().simple()),
                 |api| api.task_id().to_string(),
             ),
+            rerun,
+            allowed,
             asked: AtomicU64::new(0),
             runtime: tokio::runtime::Handle::current(),
         }
+    }
+}
+
+/// Why an approved document access did not run again.
+#[derive(Debug, thiserror::Error)]
+pub enum RerunError {
+    #[error("the session's documents are closed")]
+    Closed,
+    #[error("the waiting access is malformed: {0}")]
+    Malformed(&'static str),
+    #[error("the access failed: {0}")]
+    Failed(String),
+}
+
+/// Run the document access a waiting effect recorded (its `payload`:
+/// function, cwd, arguments, path) once more, as the user's own act: that
+/// one path is allowed, every other access gates as usual. The text the
+/// call answers.
+///
+/// # Errors
+///
+/// The session closed, the payload is not one the gate recorded, or the
+/// access failed.
+pub async fn rerun_approved(
+    deps: &HostDeps,
+    payload: &serde_json::Value,
+) -> Result<String, RerunError> {
+    let host = deps
+        .documents
+        .get()
+        .and_then(Weak::upgrade)
+        .ok_or(RerunError::Closed)?;
+    let text = |key: &'static str| {
+        payload
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .ok_or(RerunError::Malformed(key))
+    };
+    let name = text("function")?;
+    let function = [
+        Function::Read,
+        Function::Write,
+        Function::Edit,
+        Function::Grep,
+        Function::Glob,
+    ]
+    .into_iter()
+    .find(|function| function.name() == name)
+    .ok_or(RerunError::Malformed("function"))?;
+    let (cwd, path) = (PathBuf::from(text("cwd")?), PathBuf::from(text("path")?));
+    let Some(args) = payload.get("args").and_then(serde_json::Value::as_object) else {
+        return Err(RerunError::Malformed("args"));
+    };
+    let performed = perform(
+        &host,
+        function,
+        cwd,
+        &host.workspace,
+        args.clone(),
+        Caller::Approved(path),
+        &BACKGROUND_CONTEXT,
+    )
+    .await
+    .map_err(|error| RerunError::Failed(error.to_string()))?;
+    match performed {
+        Ok(performed) => Ok(performed.done.rendered().to_owned()),
+        Err(rejection) => Err(RerunError::Failed(rejection.message)),
     }
 }
 
@@ -105,8 +186,12 @@ pub fn extension(deps: &Arc<HostDeps>) -> Arc<Extension> {
             agent_dir: deps.agent_dir.clone(),
             settings: Arc::clone(&deps.settings),
             sink: deps.shell_approval.clone(),
+            recorder: Recorder::of(deps),
         },
     });
+    // The first install of the session's documents is the one `/approve`
+    // re-runs through.
+    let _ = deps.documents.set(Arc::downgrade(&host));
     requests::register(&deps.host_requests, &host);
     define_extension(Extension {
         tools: [

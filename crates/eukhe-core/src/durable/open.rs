@@ -405,6 +405,11 @@ pub async fn open_session(config: SessionConfig, cx: &Context) -> Result<EukheSe
     if let Err(error) = super::children::reconcile(&deps.budget, &harness, cx).await {
         tracing::warn!(%error, "giving back the budgets of ended children");
     }
+    // An approved effect a crash cut off is never run again: it ends
+    // failed (interrupted) and is noted unknown for a person to settle.
+    if let Err(error) = super::approve::interrupt_after_crash(&harness, root.id(), cx).await {
+        tracing::warn!(%error, "ending the approved effects a crash interrupted");
+    }
     let session = EukheSession {
         harness: harness.clone(),
         root: root.clone(),

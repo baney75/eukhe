@@ -1449,6 +1449,51 @@ pub enum DaemonCommand {
         #[serde(flatten)]
         rest: JsonMap,
     },
+    /// Rust-native: the session's waiting irreversible effects, every
+    /// status (reply: [`crate::effects::WaitingEffectsReply`]).
+    GetWaitingEffects {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        #[serde(flatten)]
+        rest: JsonMap,
+    },
+    /// Rust-native: run the waiting effects `which` names, each once, in
+    /// order, as the user's own act (reply:
+    /// [`crate::effects::ApprovedEffectsReply`]).
+    ApproveWaitingEffects {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        which: crate::effects::ApproveWhich,
+        #[serde(flatten)]
+        rest: JsonMap,
+    },
+    /// Rust-native: when the session asks about an irreversible effect
+    /// (`approvals.mode`).
+    SetApprovalMode {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        mode: crate::effects::ApprovalMode,
+        #[serde(flatten)]
+        rest: JsonMap,
+    },
+    /// Rust-native, worker to worker over the supervisor: a subagent
+    /// session records an irreversible effect waiting in its parent
+    /// session's ledger, which records it in its own when it is the root
+    /// or hands it on to its parent. `agent` names the subagent that asked
+    /// (the first session of the chain). The response data is the effect
+    /// as recorded (a [`crate::effects::WaitingEffect`] with its id).
+    RelayWaitingEffect {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        id: Option<String>,
+        active_session_id: String,
+        effect: crate::effects::WaitingEffect,
+        agent: String,
+        #[serde(flatten)]
+        rest: JsonMap,
+    },
     /// Rust-native: set the acceptance checks of the session's task as
     /// its owner (an SDK client). The checks replace the current ones
     /// (none clears them) and every verdict starts over; the intent check
@@ -1808,6 +1853,16 @@ mod tests {
         rt::<DaemonCommand>(r#"{"type":"get_unknown_effects","activeSessionId":"s1"}"#);
         rt::<DaemonCommand>(
             r#"{"type":"resolve_unknown_effect","activeSessionId":"s1","effectId":"tool:c1","resolution":"notRun"}"#,
+        );
+        rt::<DaemonCommand>(r#"{"type":"get_waiting_effects","activeSessionId":"s1"}"#);
+        rt::<DaemonCommand>(
+            r#"{"type":"approve_waiting_effects","activeSessionId":"s1","which":{"ids":["w3"]}}"#,
+        );
+        rt::<DaemonCommand>(
+            r#"{"type":"approve_waiting_effects","activeSessionId":"s1","which":"all"}"#,
+        );
+        rt::<DaemonCommand>(
+            r#"{"type":"set_approval_mode","activeSessionId":"s1","mode":"watch"}"#,
         );
     }
 

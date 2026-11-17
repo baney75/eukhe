@@ -1418,7 +1418,17 @@ async def _handle_mcp_call(req: dict[str, Any], ns: dict[str, Any]) -> None:
     timeout_ms = req.get("timeout_ms", 60_000)
     if isinstance(timeout_ms, bool) or not isinstance(timeout_ms, (int, float)) or timeout_ms <= 0:
         raise ValueError("mcp_call timeout_ms must be a positive number")
-    result = await asyncio.wait_for(mcp_mod.call_tool(server, tool, arguments), timeout_ms / 1000)
+    approved = req.get("approved", False)
+    if not isinstance(approved, bool):
+        raise ValueError("mcp_call approved must be a boolean")
+    # The user's `/approve` of a call that waited runs it past the gate.
+    call = mcp_mod._call_approved if approved else mcp_mod.call_tool
+    try:
+        result = await asyncio.wait_for(call(server, tool, arguments), timeout_ms / 1000)
+    except mcp_mod.McpCallNotRun as not_run:
+        # Not a failure: the call waits for the user's approval (or the
+        # user said no); the host's text is the result.
+        result = str(not_run)
     _send({"event": "done", "id": req["id"], "status": "ok", "result": json.loads(json.dumps(result, default=str))})
 
 
