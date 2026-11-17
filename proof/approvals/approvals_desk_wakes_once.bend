@@ -364,8 +364,6 @@ def pw.detach(+n: Nat, +qs: List<&2, Am.Q>, h: Am.Here, +p: Bool, +x: Nat) -> pw
       pw.le_refl(Nat.add(pw.qc(qs, x), pw.ge(n, x)))
     case Am.Nobody{}:
       pw.put(n, Am.reroute(qs, Am.Nobody{}, p), x, pw.qc(qs, x), pw.reroute(qs, Am.Nobody{}, p, x))
-    case Am.GatewayOnly{}:
-      pw.put(n, Am.reroute(qs, Am.GatewayOnly{}, p), x, pw.qc(qs, x), pw.reroute(qs, Am.GatewayOnly{}, p, x))
 
 # one event wakes x at most as often as its potential falls
 def pw.step(d: Am.D, e: Am.Ev, +x: Nat) -> {Nat.is_le(pw.after(Am.dstep(d, e), x), pw.pot(d, x)) == True{} : Bool}:

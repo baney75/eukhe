@@ -62,10 +62,8 @@ def oe.here(+s: String, +id: String, +es: List<&2, Nat>, +s3: String, pre: {s ==
         case 0n:
           oe.parent(s, id, es, Am.Nobody{}, s4, oe.step(z => Wr.put_nat(0n, Wr.put_str(id, Wr.put_list(~Nat, ~Wr.put_nat, es, z))), s, s3, Wr.put_nat(0n, s4), pre, Wire.wire_nat_exact(s3, 0n, s4, ed)), f1, f2, Wr.get_bool(s4), {==})
         case 1n:
-          oe.parent(s, id, es, Am.GatewayOnly{}, s4, oe.step(z => Wr.put_nat(0n, Wr.put_str(id, Wr.put_list(~Nat, ~Wr.put_nat, es, z))), s, s3, Wr.put_nat(1n, s4), pre, Wire.wire_nat_exact(s3, 1n, s4, ed)), f1, f2, Wr.get_bool(s4), {==})
-        case 2n:
-          oe.parent(s, id, es, Am.Clients{}, s4, oe.step(z => Wr.put_nat(0n, Wr.put_str(id, Wr.put_list(~Nat, ~Wr.put_nat, es, z))), s, s3, Wr.put_nat(2n, s4), pre, Wire.wire_nat_exact(s3, 2n, s4, ed)), f1, f2, Wr.get_bool(s4), {==})
-        case 3n+u:
+          oe.parent(s, id, es, Am.Clients{}, s4, oe.step(z => Wr.put_nat(0n, Wr.put_str(id, Wr.put_list(~Nat, ~Wr.put_nat, es, z))), s, s3, Wr.put_nat(1n, s4), pre, Wire.wire_nat_exact(s3, 1n, s4, ed)), f1, f2, Wr.get_bool(s4), {==})
+        case 2n+u:
           Unit{}
     case Wr.Bad{}:
       Unit{}
@@ -118,10 +116,8 @@ def oe.detach(+s: String, +s1: String, pre: {s == Wr.put_nat(2n, s1) : String}, 
         case 0n:
           oe.detach.p(s, Am.Nobody{}, s2, oe.step(z => Wr.put_nat(2n, z), s, s1, Wr.put_nat(0n, s2), pre, Wire.wire_nat_exact(s1, 0n, s2, ed)), Wr.get_bool(s2), {==})
         case 1n:
-          oe.detach.p(s, Am.GatewayOnly{}, s2, oe.step(z => Wr.put_nat(2n, z), s, s1, Wr.put_nat(1n, s2), pre, Wire.wire_nat_exact(s1, 1n, s2, ed)), Wr.get_bool(s2), {==})
-        case 2n:
-          oe.detach.p(s, Am.Clients{}, s2, oe.step(z => Wr.put_nat(2n, z), s, s1, Wr.put_nat(2n, s2), pre, Wire.wire_nat_exact(s1, 2n, s2, ed)), Wr.get_bool(s2), {==})
-        case 3n+u:
+          oe.detach.p(s, Am.Clients{}, s2, oe.step(z => Wr.put_nat(2n, z), s, s1, Wr.put_nat(1n, s2), pre, Wire.wire_nat_exact(s1, 1n, s2, ed)), Wr.get_bool(s2), {==})
+        case 2n+u:
           Unit{}
     case Wr.Bad{}:
       Unit{}
@@ -149,9 +145,7 @@ def oe.back.f(+s: String, +k: Nat, +s2: String, pre: {s == Wr.put_nat(4n, Wr.put
           (oe.step(z => Wr.put_nat(4n, Wr.put_nat(k, z)), s, s2, Wr.put_nat(1n, s3), pre, Wire.wire_nat_exact(s2, 1n, s3, ed)), fk)
         case 2n:
           (oe.step(z => Wr.put_nat(4n, Wr.put_nat(k, z)), s, s2, Wr.put_nat(2n, s3), pre, Wire.wire_nat_exact(s2, 2n, s3, ed)), fk)
-        case 3n:
-          (oe.step(z => Wr.put_nat(4n, Wr.put_nat(k, z)), s, s2, Wr.put_nat(3n, s3), pre, Wire.wire_nat_exact(s2, 3n, s3, ed)), fk)
-        case 4n+u:
+        case 3n+u:
           Unit{}
     case Wr.Bad{}:
       Unit{}

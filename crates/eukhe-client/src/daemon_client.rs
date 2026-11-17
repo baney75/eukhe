@@ -124,10 +124,12 @@ pub enum DaemonClientEvent {
     },
     /// `shell_approval_settled`: the session no longer waits on the
     /// question `request_id` (a client answered it, its step ended, or it
-    /// went elsewhere): the client drops it, shown or queued.
+    /// went elsewhere): the client drops it, shown or queued. `outcome`
+    /// says how (`None` from a daemon that sends none).
     ShellApprovalSettled {
         active_session_id: String,
         request_id: String,
+        outcome: Option<eukhe_types::shell::ShellApprovalOutcome>,
     },
     /// `roster_update`: live roster deltas for subscribers (the agents
     /// view): changed entries upsert by agent id, `removed` deletes, and
@@ -198,6 +200,8 @@ struct InboundFrame<'a> {
     agent: Option<&'a RawValue>,
     #[serde(borrow, default)]
     request_id: Option<&'a RawValue>,
+    #[serde(borrow, default)]
+    outcome: Option<&'a RawValue>,
 }
 
 /// The `meta` fields a session event's sequence rides on.
@@ -277,6 +281,7 @@ fn client_event_from_frame(frame: &InboundFrame<'_>) -> Option<DaemonClientEvent
         "shell_approval_settled" => Some(DaemonClientEvent::ShellApprovalSettled {
             active_session_id: decode_string(frame.active_session_id),
             request_id: decode_string(frame.request_id),
+            outcome: decode(frame.outcome),
         }),
         "session_list_item" => Some(DaemonClientEvent::SessionListItem {
             session: decode(frame.session).unwrap_or(Value::Null),

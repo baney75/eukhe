@@ -716,8 +716,8 @@ impl SettingsManager {
     }
 
     /// `shell.autoEffects`: the effects (`read`, `write`, `exec`, `net`,
-    /// `outside`, `protected`) a shell command may have without asking; by
-    /// default all six.
+    /// `outside`, `protected`, `secret`) a shell command may have without
+    /// the principal's approval; by default `read`, `write`, `exec`.
     #[must_use]
     pub fn get_shell_auto_effects(&self) -> Vec<String> {
         self.cvars().list(&table::SHELL_AUTO_EFFECTS)

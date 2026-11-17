@@ -1,7 +1,6 @@
 # eukhe: lemmas the proofs of area tools share
 
 import Base
-import ../../bend/approvals.bend as Am
 import ../../bend/tools.bend as Tl
 import ../../laws/tools.bend as Tools
 import ../base/logic/logic.bend as LLogicLogic
@@ -236,30 +235,6 @@ def ps.within_out(effs: List<&2, Nat>, +auto: List<&2, Nat>, +c: Nat, has: {Tl.e
 
 def ps.auto_needs_every_effect(+s: Tl.Step, +auto: List<&2, Nat>, +c: Nat, has: {Tl.elem(Tl.Step.effs(s), c) == True{} : Bool}, out: {Bool.and(Tl.grantable(c), Tl.elem(auto, c)) == False{} : Bool}) -> {Tl.auto.at(auto, s) == False{} : Bool}:
   ps.within_out(Tl.Step.effs(s), auto, c, has, out)
-
-def approvals.pa.absurdT(-A: Type, e: {True{} == False{} : Bool}) -> A:
-  %e : LLogicLogic.approvals.pa.BD(_, Unit, A)
-  Unit{}
-
-# it lets the step run when the guarded code is absent
-def pa.guard_false(b: Bool, h: {b == False{} : Bool}) -> {Am.guard(b) == Am.Runs{} : Am.Fate}:
-  match b:
-    case True{}:
-      approvals.pa.absurdT({Am.guard(True{}) == Am.Runs{} : Am.Fate}, h)
-    case False{}:
-      {==}
-
-# a step not within the auto set goes its route
-def pa.gate_routed(w: Bool, +es: List<&2, Nat>, +ds: List<&2, Am.Desk>, h: {w == False{} : Bool}) -> {Am.gate.by(w, es, ds) == Am.routed(es, Am.route(ds)) : Am.Gated}:
-  match w:
-    case True{}:
-      approvals.pa.absurdT({Am.gate.by(True{}, es, ds) == Am.routed(es, Am.route(ds)) : Am.Gated}, h)
-    case False{}:
-      {==}
-
-# the gateway's outcome as the gate gives it
-def pa.phone_gate(+auto: List<&2, Nat>, +es: List<&2, Nat>, +above: List<&2, Am.Desk>, -f: Am.Fate, w: {Tl.within(es, auto) == False{} : Bool}, r: {Am.rule(es) == f : Am.Fate}) -> {Am.gate(auto, es, Am.Phone{} <> above) == Am.Routed{Am.Out{Nil{}, Am.Ruled{0n}}, f} : Am.Gated}:
-  Equal.trans(Am.Gated, Am.gate(auto, es, Am.Phone{} <> above), Am.Routed{Am.Out{Nil{}, Am.Ruled{0n}}, Am.rule(es)}, Am.Routed{Am.Out{Nil{}, Am.Ruled{0n}}, f}, pa.gate_routed(Tl.within(es, auto), es, Am.Phone{} <> above, w), Equal.cong(Am.Fate, Am.Gated, x => Am.Routed{Am.Out{Nil{}, Am.Ruled{0n}}, x}, Am.rule(es), f, r))
 
 # ---- the gate, by its parts ----
 

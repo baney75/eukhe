@@ -20,13 +20,9 @@ import ../base.bend as LawsBase
 #     session's decision sends it to its clients (shown; open, waiting on
 #     the clients), to the parent session (relayed; open, waiting on the
 #     parent), or ends it (woken with its fate; not kept). The decision:
-#     an interactive client shows it; the phone gateway alone ends it by
-#     the gateway rule (a step with effect 5, a protected-path write, is
-#     refused, any other runs: crates/eukhe-types/src/shell.rs
-#     `ShellEffect::code`); no client relays it to the parent, or at a
-#     root ends it unanswered (approvals_desk_ask,
-#     approvals_desk_gateway_never_waits, approvals_gateway_refuses_protected,
-#     approvals_gateway_runs_unprotected).
+#     any attached client shows it (the TUI, the dashboard, the phone
+#     gateway, which asks over Signal); no client relays it to the
+#     parent, or at a root ends it unanswered (approvals_desk_ask).
 # D2: a client's answer goes to the oldest open question waiting on the
 #     clients whose frame names its request id (char by char): that one is
 #     settled, woken with the fate of the answer (yes runs the step, no
@@ -34,10 +30,10 @@ import ../base.bend as LawsBase
 #     question the answer is refused (gone) and the desk is unchanged: the
 #     first answer wins (test each_answer_wakes_one_question_once;
 #     approvals_desk_answer_takes_oldest, approvals_desk_answer_gone).
-# D3: a detach that leaves no interactive client sends every question
-#     waiting on the clients where the session's decision now sends it: up
-#     to the parent (settled, relayed) or ended (settled, woken), in order;
-#     a detach that leaves an interactive client changes nothing (test
+# D3: a detach that leaves no client sends every question waiting on the
+#     clients where the session's decision now sends it: up to the parent
+#     (settled, relayed) or ended (settled, woken), in order; a detach
+#     that leaves a client changes nothing (test
 #     a_question_its_clients_leave_goes_up_the_chain;
 #     approvals_desk_detach_pieces, approvals_desk_detach_one).
 # D4: a step that stops waiting removes its question (settled if it waited
@@ -48,11 +44,9 @@ import ../base.bend as LawsBase
 #     removes it; for any other key (one waiting on the clients, or none)
 #     it changes nothing (approvals_desk_back_wakes,
 #     approvals_desk_unknown_key).
-# D6: a question waits on the clients only
-#     while an interactive client is attached (no lost wake-up); a session
-#     whose only client is the phone gateway never shows or relays; a root
-#     never relays (approvals_desk_never_stranded,
-#     approvals_desk_gateway_never_waits, approvals_desk_root_never_relays).
+# D6: a question waits on the clients only while a client is attached (no
+#     lost wake-up); a root never relays (approvals_desk_never_stranded,
+#     approvals_desk_root_never_relays).
 # D7: the desks of a chain of sessions route a question exactly as
 #     bend/approvals.bend `route` does, over the stepper
 #     (approvals_desk_is_route).
@@ -60,6 +54,12 @@ import ../base.bend as LawsBase
 #     twice: Rust wakes each waiting step at most once, whatever the order
 #     of answers, detaches, cancels and the parent's answers
 #     (approvals_desk_wakes_once).
+# D9: a question no one answered is never a yes: a step runs only on a
+#     client's answer yes or the parent's answer that runs it; a session
+#     with no client, clients that all leave, a phone gateway that never
+#     answers and a step that stops waiting all leave it not approved
+#     (spec/README.md I5: silence is never a yes;
+#     approvals_desk_runs_only_on_a_yes).
 
 # Spec helpers
 # ------------
@@ -71,12 +71,6 @@ def sp_has(xs: List<&2, Nat>, +x: Nat) -> Bool:
       False{}
     case y <> rest:
       Bool.or(Nat.is_eq(y, x), sp_has(rest, x))
-
-# D1: the gateway rule's fate is the code's `Am.fate` at the end Ruled,
-# which approvals_gateway_refuses_protected and
-# approvals_gateway_runs_unprotected pin for every list of effects (a
-# protected-path write, effect 5, anywhere: refused; none: runs). No law
-# restates the rule (the former sp_rule/sp_guard copied `rule`/`guard`).
 
 # D2: the clients' answer: yes runs the step, no denies it
 def sp_answered(+es: List<&2, Nat>, yes: Bool) -> Am.Fate:
@@ -222,10 +216,8 @@ def dw_run(es: List<&2, Am.Ev>, +d: Am.D) -> List<&2, Nat>:
 # --------------
 # A question of the asking session, through the desks of its chain: each
 # session's clients do what its Desk says (away: no client; left: shown,
-# then the interactive clients detach; says: shown, then the first answer;
-# phone: the gateway alone; phone-left: shown, the interactive clients
-# detach, the gateway stays). A relay asks the parent's desk, and its
-# fate comes back to the session's desk.
+# then every client detaches; says: shown, then the first answer). A relay
+# asks the parent's desk, and its fate comes back to the session's desk.
 
 # who answers the session when the question reaches it
 def ch_here(d: Am.Desk) -> Am.Here:
@@ -235,10 +227,6 @@ def ch_here(d: Am.Desk) -> Am.Here:
     case Am.Left{}:
       Am.Clients{}
     case Am.Says{y}:
-      Am.Clients{}
-    case Am.Phone{}:
-      Am.GatewayOnly{}
-    case Am.PhoneLeft{}:
       Am.Clients{}
 
 # what the clients do once the question is shown
@@ -250,10 +238,6 @@ def ch_then(d: Am.Desk, +p: Bool) -> Am.Ev:
       Am.EDetach{Am.Nobody{}, p}
     case Am.Says{y}:
       Am.EAnswer{"q", y}
-    case Am.Phone{}:
-      Am.EDetach{Am.GatewayOnly{}, p}
-    case Am.PhoneLeft{}:
-      Am.EDetach{Am.GatewayOnly{}, p}
 
 # the fate the acts wake key 0 with, if any; whether they show or relay it
 def ch_woke(as: List<&2, Am.Act>) -> Maybe<&2, Am.Fate>:
@@ -390,8 +374,7 @@ def ch_run(ds: List<&2, Am.Desk>, +es: List<&2, Nat>) -> List<&2, Nat> & Am.Fate
 # an interactive client shows it (kept last, waiting on the clients); a
 # session with no client and a parent relays it (kept last, waiting on the
 # parent); a root with no client wakes it at once, unanswered (not kept);
-# qs stay as they were, in order. The phone gateway alone:
-# approvals_desk_gateway_never_waits
+# qs stay as they were, in order
 # EXCLUDES: a key reused or skipped, a new question put before older ones,
 #   a frame on a session with no client, a relay from a session with a
 #   client or from a root, an unanswered question kept open, an older
@@ -460,16 +443,15 @@ law approvals_desk_detach_pieces:
 # LAW approvals_desk_detach_one (D3, D6): a detach on a desk of one open
 # question (key k, request id i, effects es): one waiting on the parent
 # stays as it is, whoever is left; one waiting on the clients stays while
-# an interactive client is attached; when none is (no client, or the phone
-# gateway alone), it is settled for the clients and then goes exactly
-# where the same question (key k, id i, effects es) asked of the session
-# now goes, as the step of the empty desk with next key k on that ask
-# says: up to the parent (kept, waiting on the parent) or ended (woken);
-# the next key stays
+# a client is attached; when none is, it is settled for the clients and
+# then goes exactly where the same question (key k, id i, effects es)
+# asked of the session now goes, as the step of the empty desk with next
+# key k on that ask says: up to the parent (kept, waiting on the parent)
+# or ended (woken); the next key stays
 # EXCLUDES: a relayed question moved or woken by a detach, a question its
-#   remaining interactive clients still see moved, a question left
-#   waiting on clients that all left, a question sent up from a root or
-#   past the gateway rule, a left question not settled for the clients
+#   remaining clients still see moved, a question left waiting on clients
+#   that all left, a question sent up from a root, a left question not
+#   settled for the clients
 law approvals_desk_detach_one:
   for +n: Nat
   for +k: Nat
@@ -477,7 +459,7 @@ law approvals_desk_detach_one:
   for +es: List<&2, Nat>
   for +h: Am.Here
   for +p: Bool
-  {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnParent{}}]}, Am.EDetach{h, p}) == (Am.D{n, [Am.Q{k, i, es, Am.OnParent{}}]}, Nil{}) : Am.D & List<&2, Am.Act>} & {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Am.EDetach{Am.Clients{}, p}) == (Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Nil{}) : Am.D & List<&2, Am.Act>} & {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Am.EDetach{Am.Nobody{}, p}) == (Am.D{n, ds_qs(ds_desk(Am.dstep(Am.D{k, Nil{}}, Am.EAsk{i, es, Am.Nobody{}, p})))}, Am.ASettle{k} <> ds_acts(Am.dstep(Am.D{k, Nil{}}, Am.EAsk{i, es, Am.Nobody{}, p}))) : Am.D & List<&2, Am.Act>} & {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Am.EDetach{Am.GatewayOnly{}, p}) == (Am.D{n, ds_qs(ds_desk(Am.dstep(Am.D{k, Nil{}}, Am.EAsk{i, es, Am.GatewayOnly{}, p})))}, Am.ASettle{k} <> ds_acts(Am.dstep(Am.D{k, Nil{}}, Am.EAsk{i, es, Am.GatewayOnly{}, p}))) : Am.D & List<&2, Am.Act>}
+  {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnParent{}}]}, Am.EDetach{h, p}) == (Am.D{n, [Am.Q{k, i, es, Am.OnParent{}}]}, Nil{}) : Am.D & List<&2, Am.Act>} & {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Am.EDetach{Am.Clients{}, p}) == (Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Nil{}) : Am.D & List<&2, Am.Act>} & {Am.dstep(Am.D{n, [Am.Q{k, i, es, Am.OnClients{}}]}, Am.EDetach{Am.Nobody{}, p}) == (Am.D{n, ds_qs(ds_desk(Am.dstep(Am.D{k, Nil{}}, Am.EAsk{i, es, Am.Nobody{}, p})))}, Am.ASettle{k} <> ds_acts(Am.dstep(Am.D{k, Nil{}}, Am.EAsk{i, es, Am.Nobody{}, p}))) : Am.D & List<&2, Am.Act>}
 
 # LAW approvals_desk_cancel_removes (D4): a step that stops waiting (key
 # k) removes its question, the first with key k (no question of pre has
@@ -529,27 +511,12 @@ law approvals_desk_unknown_key:
   {Am.dstep(Am.D{n, qs}, Am.ECancel{k}) == (Am.D{n, qs}, Nil{}) : Am.D & List<&2, Am.Act>} & {Am.dstep(Am.D{n, qs}, Am.EBack{k, f}) == (Am.D{n, qs}, Nil{}) : Am.D & List<&2, Am.Act>}
 
 # LAW approvals_desk_never_stranded (D6): from every desk, a detach that
-# leaves no interactive client leaves no question waiting on the clients
+# leaves no client leaves no question waiting on the clients
 # EXCLUDES: a lost wake-up: a step that waits on clients that all left
 law approvals_desk_never_stranded:
   for +d: Am.D
   for +p: Bool
-  {[ds_any_clients(ds_qs(ds_desk(Am.dstep(d, Am.EDetach{Am.Nobody{}, p})))), ds_any_clients(ds_qs(ds_desk(Am.dstep(d, Am.EDetach{Am.GatewayOnly{}, p}))))] == [False{}, False{}] : List<&2, Bool>}
-
-# LAW approvals_desk_gateway_never_waits (D6): from every desk, a question
-# that reaches a session whose only client is the phone gateway is woken at
-# once with the gateway rule's fate (the fate of a question that ends
-# Ruled: approvals_gateway_refuses_protected and
-# approvals_gateway_runs_unprotected say which): no frame, no relay, and
-# the desk keeps its other questions
-# EXCLUDES: a phone-only session that waits or hands the question up, or
-#   wakes the step with a fate other than the gateway rule's
-law approvals_desk_gateway_never_waits:
-  for +d: Am.D
-  for +id: String
-  for +es: List<&2, Nat>
-  for +p: Bool
-  {Am.dstep(d, Am.EAsk{id, es, Am.GatewayOnly{}, p}) == (Am.D{1n+ds_next(d), ds_qs(d)}, [Am.AWake{ds_next(d), Am.fate(es, Am.Ruled{0n})}]) : Am.D & List<&2, Am.Act>}
+  {ds_any_clients(ds_qs(ds_desk(Am.dstep(d, Am.EDetach{Am.Nobody{}, p})))) == False{} : Bool}
 
 # LAW approvals_desk_root_never_relays (D6): from every desk, a root
 # session (no parent) never relays, on a question or on a detach
@@ -587,22 +554,85 @@ law approvals_desk_wakes_once:
   for +k: Nat
   {Nat.is_le(dw_count(dw_run(es, Am.D{0n, Nil{}}), k), 1n) == True{} : Bool}
 
+# Terms of the yes law (D9)
+# -------------------------
+
+# the step runs
+def dy_runs(f: Am.Fate) -> Bool:
+  match f:
+    case Am.Runs{}:
+      True{}
+    case Am.Denied{}:
+      False{}
+    case Am.Unheard{}:
+      False{}
+
+# the event e is a yes for the question with the key k: a client's answer
+# yes, or the parent's answer to k that runs the step
+def dy_said_yes(e: Am.Ev, +k: Nat) -> Bool:
+  match e:
+    case Am.EAsk{id, es, h, p}:
+      False{}
+    case Am.EAnswer{id, y}:
+      y
+    case Am.EDetach{h, p}:
+      False{}
+    case Am.ECancel{j}:
+      False{}
+    case Am.EBack{j, f}:
+      Bool.and(Nat.is_eq(k, j), dy_runs(f))
+
+# every wake among the acts that runs a step answers a yes of the event e
+# for that step
+def dy_yes_only(+e: Am.Ev, as: List<&2, Am.Act>) -> Bool:
+  match as:
+    case Nil{}:
+      True{}
+    case a <> t:
+      match a:
+        case Am.AWake{k, f}:
+          Bool.and(Bool.or(Bool.not(dy_runs(f)), dy_said_yes(e, k)), dy_yes_only(e, t))
+        case Am.AShow{k}:
+          dy_yes_only(e, t)
+        case Am.ASettle{k}:
+          dy_yes_only(e, t)
+        case Am.ARelay{k}:
+          dy_yes_only(e, t)
+        case Am.ATook{}:
+          dy_yes_only(e, t)
+        case Am.AGone{}:
+          dy_yes_only(e, t)
+
+# LAW approvals_desk_runs_only_on_a_yes (D9): from every desk, every event
+# wakes a step to run only when the event is a yes for that step: a
+# client's answer yes, or the parent's answer to that key that runs it. A
+# question no one answered (a session with no client, clients that all
+# left, the phone gateway asked and silent, a step that stopped waiting)
+# never runs its step
+# EXCLUDES: a session that runs a step no one approved (a rule that says
+#   yes for an absent user, a detach or a cancel read as a yes, a denial
+#   or an unanswered relay that runs, a parent's yes to another key)
+law approvals_desk_runs_only_on_a_yes:
+  for +d: Am.D
+  for +e: Am.Ev
+  {dy_yes_only(e, ds_acts(Am.dstep(d, e))) == True{} : Bool}
+
 # LAW approvals_desk_fates_example (D1-D3): anchor: the fates the desk
-# wakes steps with: a phone-only session refuses a protected-path write
-# (effects 1, 5) at once and runs a secret read (0, 6) and a plain write;
-# a protected-path write its clients approve runs; a secret read they deny
-# is denied; a protected-path write the interactive clients leave to the
-# phone gateway is refused, and one they leave at a root is unanswered
-# EXCLUDES: a gateway rule that runs a guarded step or refuses a plain
-#   one, an approval read as the gateway rule, a denial read as a yes, a
-#   left question that runs
+# wakes steps with: a protected-path write (effects 1, 5) and a secret
+# read (0, 6) reach a session with a client (the phone gateway counts as
+# one) and are shown, never ruled; a write at a root with no client is
+# unanswered; a protected-path write its clients approve runs; a secret
+# read they deny is denied; a protected-path write the clients leave goes
+# up to the parent, and one they leave at a root is unanswered
+# EXCLUDES: a session that rules a step instead of asking, an approval
+#   read as a no, a denial read as a yes, a left question that runs
 law approvals_desk_fates_example:
-  {ds_acts(Am.dstep(Am.D{0n, Nil{}}, Am.EAsk{"w", [1n, 5n], Am.GatewayOnly{}, True{}})) == [Am.AWake{0n, Am.GatewayRefused{}}] : List<&2, Am.Act>} &
-  {ds_acts(Am.dstep(Am.D{0n, Nil{}}, Am.EAsk{"s", [0n, 6n], Am.GatewayOnly{}, False{}})) == [Am.AWake{0n, Am.Runs{}}] : List<&2, Am.Act>} &
-  {ds_acts(Am.dstep(Am.D{3n, Nil{}}, Am.EAsk{"x", [1n], Am.GatewayOnly{}, False{}})) == [Am.AWake{3n, Am.Runs{}}] : List<&2, Am.Act>} &
+  {ds_acts(Am.dstep(Am.D{0n, Nil{}}, Am.EAsk{"w", [1n, 5n], Am.Clients{}, True{}})) == [Am.AShow{0n}] : List<&2, Am.Act>} &
+  {ds_acts(Am.dstep(Am.D{0n, Nil{}}, Am.EAsk{"s", [0n, 6n], Am.Clients{}, False{}})) == [Am.AShow{0n}] : List<&2, Am.Act>} &
+  {ds_acts(Am.dstep(Am.D{3n, Nil{}}, Am.EAsk{"x", [1n], Am.Nobody{}, False{}})) == [Am.AWake{3n, Am.Unheard{}}] : List<&2, Am.Act>} &
   {ds_acts(Am.dstep(Am.D{1n, [Am.Q{0n, "w", [1n, 5n], Am.OnClients{}}]}, Am.EAnswer{"w", True{}})) == [Am.ASettle{0n}, Am.AWake{0n, Am.Runs{}}, Am.ATook{}] : List<&2, Am.Act>} &
   {ds_acts(Am.dstep(Am.D{1n, [Am.Q{0n, "s", [0n, 6n], Am.OnClients{}}]}, Am.EAnswer{"s", False{}})) == [Am.ASettle{0n}, Am.AWake{0n, Am.Denied{}}, Am.ATook{}] : List<&2, Am.Act>} &
-  {ds_acts(Am.dstep(Am.D{1n, [Am.Q{0n, "w", [1n, 5n], Am.OnClients{}}]}, Am.EDetach{Am.GatewayOnly{}, True{}})) == [Am.ASettle{0n}, Am.AWake{0n, Am.GatewayRefused{}}] : List<&2, Am.Act>} &
+  {ds_acts(Am.dstep(Am.D{1n, [Am.Q{0n, "w", [1n, 5n], Am.OnClients{}}]}, Am.EDetach{Am.Nobody{}, True{}})) == [Am.ASettle{0n}, Am.ARelay{0n}] : List<&2, Am.Act>} &
   {ds_acts(Am.dstep(Am.D{1n, [Am.Q{0n, "w", [1n, 5n], Am.OnClients{}}]}, Am.EDetach{Am.Nobody{}, False{}})) == [Am.ASettle{0n}, Am.AWake{0n, Am.Unheard{}}] : List<&2, Am.Act>}
 
 # LAW approvals_desk_terms_exact: the terms of the desk laws mean what they
@@ -610,39 +640,19 @@ law approvals_desk_fates_example:
 # a relay among acts is seen, other acts are not; the woken keys are the
 # wakes' keys in order; a count counts; a run collects every reply's wakes;
 # a question waiting on the clients under an id is seen (not one on the
-# parent, not one under another id), and so is a key
+# parent, not one under another id), and so is a key; a wake that runs a
+# step passes the yes check only after a yes for its key (a client's yes,
+# the parent's runs for that key), and a wake that refuses always does
 # EXCLUDES: a vacuous term (one constant answer) that would make
 #   approvals_desk_never_stranded, approvals_desk_root_never_relays,
-#   approvals_desk_wakes_once, or the premises of
-#   approvals_desk_answer_takes_oldest, approvals_desk_answer_gone,
-#   approvals_desk_cancel_removes, approvals_desk_back_wakes and
-#   approvals_desk_unknown_key say nothing
+#   approvals_desk_wakes_once, approvals_desk_runs_only_on_a_yes, or the
+#   premises of approvals_desk_answer_takes_oldest,
+#   approvals_desk_answer_gone, approvals_desk_cancel_removes,
+#   approvals_desk_back_wakes and approvals_desk_unknown_key say nothing
 law approvals_desk_terms_exact:
   {[ds_any_clients([Am.Q{0n, "a", Nil{}, Am.OnParent{}}, Am.Q{1n, "b", Nil{}, Am.OnClients{}}]), ds_any_clients([Am.Q{0n, "a", Nil{}, Am.OnParent{}}]), ds_any_relay([Am.ASettle{0n}, Am.ARelay{0n}]), ds_any_relay([Am.AShow{0n}, Am.ASettle{0n}, Am.AWake{0n, Am.Runs{}}, Am.ATook{}, Am.AGone{}])] == [True{}, False{}, True{}, False{}] : List<&2, Bool>} &
   {dw_woke([Am.AShow{0n}, Am.AWake{1n, Am.Runs{}}, Am.ASettle{2n}, Am.ARelay{4n}, Am.AWake{3n, Am.Denied{}}, Am.ATook{}, Am.AGone{}]) == [1n, 3n] : List<&2, Nat>} &
   {[dw_count([1n, 3n, 1n], 1n), dw_count([1n, 3n, 1n], 2n)] == [2n, 0n] : List<&2, Nat>} &
-  {dw_run([Am.EAsk{"a", [1n], Am.GatewayOnly{}, False{}}, Am.EAsk{"b", [1n], Am.Clients{}, False{}}, Am.EAnswer{"b", False{}}], Am.D{0n, Nil{}}) == [0n, 1n] : List<&2, Nat>} &
-  {[ds_none_open([Am.Q{0n, "a", Nil{}, Am.OnParent{}}, Am.Q{1n, "b", Nil{}, Am.OnClients{}}], "a"), ds_none_open([Am.Q{0n, "a", Nil{}, Am.OnParent{}}, Am.Q{1n, "b", Nil{}, Am.OnClients{}}], "b"), ds_no_key([Am.Q{0n, "a", Nil{}, Am.OnParent{}}], 1n), ds_no_key([Am.Q{2n, "a", Nil{}, Am.OnParent{}}, Am.Q{0n, "b", Nil{}, Am.OnClients{}}], 0n)] == [True{}, False{}, True{}, False{}] : List<&2, Bool>}
-
-# LAW approvals_gateway_refuses_protected (D1): the gateway rule (the end
-# Ruled, at any session a) refuses every step with a protected-path write
-# (effect 5) among its effects, wherever it sits (pre, then 5, then post)
-# EXCLUDES: a gateway rule that reads only the first or the last effect,
-#   or runs a protected-path write
-law approvals_gateway_refuses_protected:
-  for +pre: List<&2, Nat>
-  for +post: List<&2, Nat>
-  for +a: Nat
-  {Am.fate(List.append(&2, Nat, pre, 5n <> post), Am.Ruled{a}) == Am.GatewayRefused{} : Am.Fate}
-
-# LAW approvals_gateway_runs_unprotected (D1): the gateway rule (the end
-# Ruled, at any session a) runs every step with no protected-path write
-# (no effect 5) among its effects, a secret access included
-# EXCLUDES: a gateway rule that refuses a plain step, or still refuses a
-#   secret access (changed 2026-10-27 by the user: secrets never ask
-#   again)
-law approvals_gateway_runs_unprotected:
-  for +es: List<&2, Nat>
-  for +a: Nat
-  for no: {sp_has(es, 5n) == False{} : Bool}
-  {Am.fate(es, Am.Ruled{a}) == Am.Runs{} : Am.Fate}
+  {dw_run([Am.EAsk{"a", [1n], Am.Nobody{}, False{}}, Am.EAsk{"b", [1n], Am.Clients{}, False{}}, Am.EAnswer{"b", False{}}], Am.D{0n, Nil{}}) == [0n, 1n] : List<&2, Nat>} &
+  {[ds_none_open([Am.Q{0n, "a", Nil{}, Am.OnParent{}}, Am.Q{1n, "b", Nil{}, Am.OnClients{}}], "a"), ds_none_open([Am.Q{0n, "a", Nil{}, Am.OnParent{}}, Am.Q{1n, "b", Nil{}, Am.OnClients{}}], "b"), ds_no_key([Am.Q{0n, "a", Nil{}, Am.OnParent{}}], 1n), ds_no_key([Am.Q{2n, "a", Nil{}, Am.OnParent{}}, Am.Q{0n, "b", Nil{}, Am.OnClients{}}], 0n)] == [True{}, False{}, True{}, False{}] : List<&2, Bool>} &
+  {[dy_yes_only(Am.EAsk{"a", [1n], Am.Clients{}, False{}}, [Am.AShow{0n}, Am.AWake{0n, Am.Runs{}}]), dy_yes_only(Am.EAnswer{"a", True{}}, [Am.ASettle{0n}, Am.AWake{0n, Am.Runs{}}, Am.ATook{}]), dy_yes_only(Am.EAnswer{"a", False{}}, [Am.AWake{0n, Am.Runs{}}]), dy_yes_only(Am.EBack{1n, Am.Runs{}}, [Am.AWake{0n, Am.Runs{}}]), dy_yes_only(Am.EBack{0n, Am.Runs{}}, [Am.AWake{0n, Am.Runs{}}]), dy_yes_only(Am.EBack{0n, Am.Denied{}}, [Am.AWake{0n, Am.Runs{}}]), dy_yes_only(Am.EDetach{Am.Nobody{}, False{}}, [Am.ASettle{0n}, Am.ARelay{1n}, Am.AWake{0n, Am.Unheard{}}, Am.AWake{2n, Am.Denied{}}, Am.AGone{}]), dy_yes_only(Am.ECancel{0n}, [Am.AWake{0n, Am.Unheard{}}, Am.AWake{0n, Am.Runs{}}])] == [False{}, True{}, False{}, False{}, True{}, False{}, True{}, False{}] : List<&2, Bool>}

@@ -207,6 +207,7 @@ import ./laws/headless_task.bend as HeadlessTask
 import ./laws/thread.bend as Thread
 import ./laws/tool_result.bend as ToolResult
 import ./laws/job_notice.bend as JobNotice
+import ./laws/irreversible.bend as Irreversible
 import ./laws/once.bend as Once
 import ./laws/privacy/ip.bend as PrivacyIp
 import ./laws/privacy/token.bend as PrivacyToken

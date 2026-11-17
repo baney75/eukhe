@@ -42,10 +42,8 @@ import ./base.bend as LawsBase
 #     unasked takes no answer. A step's effects are every effect of every
 #     part of it; only a part that names a secret path gives the secret
 #     effect (6).
-# G5: a session whose only clients are the phone gateway never waits: the
-#     gateway rule refuses a step that writes a protected path (5) when
-#     the auto set does not already run it, and runs every other step; the
-#     default auto set holds every grantable effect.
+# G5: the default auto set holds every grantable effect (where a question
+#     goes and that no one's silence is a yes: laws/approvals/).
 
 # LAW roster_fixed: no event changes the roster: tools that join go behind `dyn`
 law roster_fixed:
@@ -724,43 +722,6 @@ law composed_needs_every_part:
   for out: {Bool.and(Tl.grantable(c), Tl.elem(auto, c)) == False{} : Bool}
   {Tl.auto.at(auto, Tl.Step{i, Tl.join(List.append(&2, List<&2, Nat>, pre, p <> post))}) == False{} : Bool}
 
-# (G5) A session that runs only from the phone gateway never waits
-# -----------------------------------------------------------------
-# The phone gateway shows no question. A step is guarded when it writes a
-# protected path (effect 5: eukhe's own config and credentials, a .git or
-# .eukhe dir, a PATH dir); the rule refuses it when the auto set does not
-# already run it, and runs every other step.
-
-# the step runs, as the gate decides it
-def gw_fate_runs(f: Am.Fate) -> Bool:
-  match f:
-    case Am.Runs{}:
-      True{}
-    case Am.Denied{}:
-      False{}
-    case Am.Unheard{}:
-      False{}
-    case Am.GatewayRefused{}:
-      False{}
-
-def gw_runs(g: Am.Gated) -> Bool:
-  match g:
-    case Am.Unasked{}:
-      True{}
-    case Am.Routed{o, f}:
-      gw_fate_runs(f)
-
-# LAW gateway_runs_unprotected (G5): in a session whose only clients are the phone gateway, with any auto set and any sessions above it, a step that writes no protected path (5) runs: unasked when its effects are within the auto set, else by the gateway rule, a secret access (6) and a write outside the workspace (4) included
-# EXCLUDES: a phone-only session that waits on a question, refuses or
-#   leaves unanswered a step that writes no protected path (a secret
-#   access refused, a guard on another effect)
-law gateway_runs_unprotected:
-  for +auto: List<&2, Nat>
-  for +es: List<&2, Nat>
-  for not_protected: {tg_in(es, 5n) == False{} : Bool}
-  for +above: List<&2, Am.Desk>
-  {gw_runs(Am.gate(auto, es, Am.Phone{} <> above)) == True{} : Bool}
-
 # (G5) The default auto set
 # --------------------------------------------------
 # A step runs unasked when its effects are within the auto set
@@ -770,37 +731,17 @@ law gateway_runs_unprotected:
 # session with no settings and compares it with the core's
 # `default_auto` (the call of bend/ffi_approvals.bend).
 
-# LAW default_auto_is_grantable (changed 2026-10-27 by the user: secrets
-# never ask again): the auto set of a session whose user sets none holds
-# exactly the grantable effects: every effect
-law default_auto_is_grantable:
+# LAW default_auto_is_reversible (changed 2026-11-16 by the owner: reversible
+# work runs unasked, an irreversible effect waits for an approval;
+# replaces default_auto_is_grantable of 2026-10-27, every effect): the
+# grant of a session whose user sets none holds exactly read, write and
+# exec (spec/README.md I1)
+# EXCLUDES: the old default of every effect (a `git push` or a write
+#   outside the workspace run unasked), a default without exec (builds and
+#   tests held)
+law default_auto_is_reversible:
   for +c: Nat
-  {Tl.elem(Am.default_auto(), c) == Tl.grantable(c) : Bool}
-
-# LAW outside_runs_only_by_the_gateway (changed 2026-10-23 by the user: no prompts, like omp): in a
-# session whose only clients are the phone gateway and whose auto set
-# lacks outside (4), a write outside the workspace that is not protected
-# and touches no secret runs, and only by the gateway rule
-law outside_runs_only_by_the_gateway:
-  for +auto: List<&2, Nat>
-  for +es: List<&2, Nat>
-  for outside: {Tl.elem(es, 4n) == True{} : Bool}
-  for off: {Tl.elem(auto, 4n) == False{} : Bool}
-  for not_protected: {Tl.elem(es, 5n) == False{} : Bool}
-  for not_secret: {Tl.elem(es, 6n) == False{} : Bool}
-  for +above: List<&2, Am.Desk>
-  {Am.gate(auto, es, Am.Phone{} <> above) == Am.Routed{Am.Out{Nil{}, Am.Ruled{0n}}, Am.Runs{}} : Am.Gated}
-
-# LAW guarded_refused_from_the_phone (changed 2026-10-27 by the user:
-# secrets never ask again): and there a step that writes a protected path
-# (effect 5) is refused at once, when the auto set does not already run it
-law guarded_refused_from_the_phone:
-  for +auto: List<&2, Nat>
-  for +es: List<&2, Nat>
-  for protected: {Tl.elem(es, 5n) == True{} : Bool}
-  for off: {Tl.elem(auto, 5n) == False{} : Bool}
-  for +above: List<&2, Am.Desk>
-  {Am.gate(auto, es, Am.Phone{} <> above) == Am.Routed{Am.Out{Nil{}, Am.Ruled{0n}}, Am.GatewayRefused{}} : Am.Gated}
+  {Tl.elem(Am.default_auto(), c) == Nat.is_lt(c, 3n) : Bool}
 
 # ys, with y in front unless y is the tool that quits (hit)
 def tr_keep(hit: Bool, y: Nat, ys: List<&2, Nat>) -> List<&2, Nat>:

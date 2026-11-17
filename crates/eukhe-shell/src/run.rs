@@ -50,9 +50,6 @@ pub enum Answer {
     Deny,
     /// No one answered: a denial.
     Unanswered,
-    /// The session runs only from the phone gateway, and the step writes
-    /// a protected path: refused unasked.
-    GatewayRefused,
 }
 
 /// Asks the user whether a gated step may run.
@@ -88,8 +85,7 @@ pub trait Sink: Sync {
 pub enum Approval {
     /// Its effects are within the auto set.
     Auto,
-    /// The user approved it, or the session runs only from the phone
-    /// gateway, which runs a step that is not guarded unasked.
+    /// The user approved it.
     Approved,
 }
 
@@ -109,8 +105,6 @@ pub struct StepRun {
 pub enum Refusal {
     Denied,
     Unanswered,
-    /// [`Answer::GatewayRefused`].
-    GatewayRefused,
 }
 
 /// How a script ended.
@@ -583,7 +577,7 @@ impl Shell {
                     let answer = approver.approve(ask).await;
                     let said = match answer {
                         Answer::Approve => Said::Yes,
-                        Answer::Deny | Answer::Unanswered | Answer::GatewayRefused => Said::No,
+                        Answer::Deny | Answer::Unanswered => Said::No,
                     };
                     match gate::answered(stage.step, said) {
                         Answered::Runs => Approval::Approved,
@@ -594,7 +588,6 @@ impl Shell {
                                 effects: stage.effects,
                                 refusal: match answer {
                                     Answer::Unanswered => Refusal::Unanswered,
-                                    Answer::GatewayRefused => Refusal::GatewayRefused,
                                     Answer::Approve | Answer::Deny => Refusal::Denied,
                                 },
                             });

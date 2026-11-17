@@ -20,8 +20,8 @@
 #           | 2, here: Here, parent: Bool     (a client detached)
 #           | 3, key: Nat                     (the step stopped waiting)
 #           | 4, key: Nat, fate: Fate         (the parent's answer)
-#   Here    0 nobody | 1 the phone gateway alone | 2 an interactive client
-#   Fate    0 runs | 1 denied | 2 unanswered | 3 refused by the gateway rule
+#   Here    0 nobody | 1 a client (the TUI, the dashboard, the phone gateway)
+#   Fate    0 runs | 1 denied | 2 unanswered
 #   Acts    List<Act>
 #   Act     0, key (show) | 1, key (settle) | 2, key (relay)
 #           | 3, key, Fate (wake) | 4 (took) | 5 (gone)
@@ -60,10 +60,8 @@ def get_here(r: W.Dec<Nat>) -> W.Dec<Am.Here>:
         case 0n:
           W.Got{Am.Nobody{}, s}
         case 1n:
-          W.Got{Am.GatewayOnly{}, s}
-        case 2n:
           W.Got{Am.Clients{}, s}
-        case 3n+u:
+        case 2n+u:
           W.Bad{}
     case W.Bad{}:
       W.Bad{}
@@ -78,9 +76,7 @@ def get_fate(r: W.Dec<Nat>) -> W.Dec<Am.Fate>:
           W.Got{Am.Denied{}, s}
         case 2n:
           W.Got{Am.Unheard{}, s}
-        case 3n:
-          W.Got{Am.GatewayRefused{}, s}
-        case 4n+u:
+        case 3n+u:
           W.Bad{}
     case W.Bad{}:
       W.Bad{}
@@ -199,8 +195,6 @@ def put_fate(f: Am.Fate, rest: String) -> String:
       W.put_nat(1n, rest)
     case Am.Unheard{}:
       W.put_nat(2n, rest)
-    case Am.GatewayRefused{}:
-      W.put_nat(3n, rest)
 
 def put_act(a: Am.Act, rest: String) -> String:
   match a:

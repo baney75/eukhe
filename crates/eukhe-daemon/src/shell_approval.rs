@@ -1,20 +1,20 @@
 //! The worker's pending shell approvals: the `bash` tool asks the attached
 //! clients whether one step may run (a `shell_approval` frame), and the
-//! first `answer_shell_approval` for its request id wins. A session whose
-//! attached clients are all the phone gateway (`clientKind` `gateway`),
-//! which shows no question, asks no one: it runs the step at once, or
-//! refuses it at once when the step writes a protected path the user's
-//! auto set does not already run (the gateway rule). A session with no
+//! first `answer_shell_approval` for its request id wins. Every attached
+//! client is asked: the TUI, the dashboard, and the phone gateway, which
+//! asks over Signal and sends the phone's answer. A session with no
 //! attached client, or whose clients all detached before an answer came,
 //! hands the question to its parent session (`relay_shell_approval` over
 //! the supervisor), which does the same: the question reaches the nearest
 //! session up the chain with a client, and its frame names the subagent
 //! that asks. When no session up to the root answers, the step is
-//! unanswered, which the tool treats as a denial (`laws/approvals/`, G5).
-//! However a question's wait on the session's clients ends (an answer, the
-//! last detach, the step's cancellation), a `shell_approval_settled` frame
-//! tells every client to drop it; an answer to a question no longer pending
-//! is refused with [`DaemonErrorInfo::ShellApprovalGone`].
+//! unanswered, which the tool treats as a denial: a question no one
+//! answers is never a yes (`laws/approvals/`, G5). However a question's
+//! wait on the session's clients ends (an answer, the last detach, the
+//! step's cancellation, which a run's stop or its budget's deadline
+//! causes), a `shell_approval_settled` frame tells every client to drop
+//! it and how it ended; an answer to a question no longer pending is
+//! refused with [`DaemonErrorInfo::ShellApprovalGone`].
 //!
 //! This module decides none of that. The session's desk, a stepper of the
 //! compiled core ([`approvals::Desk`]), keeps the open questions and
@@ -30,7 +30,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use eukhe_bend::rules::approvals::{self, Act, Here, Key, Parent};
 use eukhe_bend::rules::shell::Said;
 use eukhe_types::daemon::{DaemonCommand, DaemonErrorInfo};
-use eukhe_types::shell::{ShellAnswer, ShellApprovalRequest, ShellVerdict};
+use eukhe_types::shell::{ShellAnswer, ShellApprovalOutcome, ShellApprovalRequest, ShellVerdict};
 use futures::future::BoxFuture;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -50,18 +50,11 @@ const ANSWER_COMMAND: &str = "answer_shell_approval";
 
 const RELAY_COMMAND: &str = "relay_shell_approval";
 
-/// Who answers a question of the session now, as attached: no client,
-/// only the phone gateway, or an interactive client (the TUI, the
-/// dashboard).
+/// Who answers a question of the session now, as attached: no client, or
+/// a client (the TUI, the dashboard, the phone gateway).
 fn here(core: &SessionCore) -> Here {
     if core.attached_client_ids.is_empty() {
         Here::Nobody
-    } else if core
-        .attached_client_ids
-        .iter()
-        .all(|id| core.gateway_client_ids.contains(id))
-    {
-        Here::GatewayOnly
     } else {
         Here::Clients
     }
@@ -131,7 +124,7 @@ impl Drop for Waiting<'_> {
         if let Some(key) = self.key.take() {
             let mut office = self.approvals.lock_office();
             let acts = office.desk.cancel(key);
-            self.approvals.perform(&mut office, acts);
+            self.approvals.perform(&mut office, &acts);
             office.open.remove(&key);
         }
     }
@@ -216,7 +209,7 @@ impl ShellApprovals {
                     waiter,
                 },
             );
-            self.perform(&mut office, acts);
+            self.perform(&mut office, &acts);
             key
         };
         let mut waiting = Waiting {
@@ -227,16 +220,13 @@ impl ShellApprovals {
             match turns.recv().await {
                 Some(Turn::Wake(answer)) => {
                     waiting.key = None;
-                    if answer == ShellAnswer::GatewayRefused {
-                        tracing::info!(effects = %request.effects.names(), "the gateway rule refused a step");
-                    }
                     return answer;
                 }
                 Some(Turn::Relay) => {
                     let answer = self.relay_up(&request, agent.as_deref()).await;
                     let mut office = self.lock_office();
                     let acts = office.desk.back(key, answer);
-                    self.perform(&mut office, acts);
+                    self.perform(&mut office, &acts);
                 }
                 // The waiter goes only with the question's wake, which
                 // comes first.
@@ -337,7 +327,7 @@ impl ShellApprovals {
         };
         let mut office = self.lock_office();
         let took = match office.desk.answer(request_id, said) {
-            Ok(acts) => self.perform(&mut office, acts),
+            Ok(acts) => self.perform(&mut office, &acts),
             Err(error) => {
                 tracing::warn!(%error, "the shell approval answer does not reach the desk");
                 false
@@ -361,13 +351,13 @@ impl ShellApprovals {
     pub(crate) fn detached(&self, core: &SessionCore) {
         let mut office = self.lock_office();
         let acts = office.desk.detach(here(core), parent(core));
-        self.perform(&mut office, acts);
+        self.perform(&mut office, &acts);
     }
 
     /// Do the desk's acts, in order; whether one took a client's answer.
-    fn perform(&self, office: &mut Office, acts: Vec<Act>) -> bool {
+    fn perform(&self, office: &mut Office, acts: &[Act]) -> bool {
         let mut took = false;
-        for act in acts {
+        for (at, &act) in acts.iter().enumerate() {
             match act {
                 Act::Show(key) => {
                     if let Some(open) = office.open.get(&key) {
@@ -388,6 +378,7 @@ impl ShellApprovals {
                             &DaemonOutbound::ShellApprovalSettled {
                                 active_session_id: self.active_session_id.clone(),
                                 request_id: open.request.request_id.clone(),
+                                outcome: settled_outcome(key, acts.get(at + 1..).unwrap_or(&[])),
                                 rest: Map::default(),
                             },
                             OutboundFrame::shell_approval_settled,
@@ -422,6 +413,29 @@ impl ShellApprovals {
             }
         }
     }
+}
+
+/// How the wait of the question `key` on the clients ended, read from the
+/// desk's acts after its settle: the wake or relay of that key, else none
+/// (the step stopped waiting).
+fn settled_outcome(key: Key, after: &[Act]) -> ShellApprovalOutcome {
+    after
+        .iter()
+        .find_map(|act| match *act {
+            Act::Wake(woken, answer) if woken == key => Some(match answer {
+                ShellAnswer::Approve => ShellApprovalOutcome::Approved,
+                ShellAnswer::Deny => ShellApprovalOutcome::Denied,
+                ShellAnswer::Unanswered => ShellApprovalOutcome::Unanswered,
+            }),
+            Act::Relay(relayed) if relayed == key => Some(ShellApprovalOutcome::Relayed),
+            Act::Show(_)
+            | Act::Settle(_)
+            | Act::Relay(_)
+            | Act::Wake(..)
+            | Act::Took
+            | Act::Gone => None,
+        })
+        .unwrap_or(ShellApprovalOutcome::Stopped)
 }
 
 #[cfg(test)]
@@ -559,20 +573,22 @@ mod tests {
         serde_json::from_slice(&frame.payload).unwrap()
     }
 
-    /// Every end of a question's wait tells the clients to drop it: the
-    /// answer of one client (the others still show it), and a step whose
-    /// wait was cancelled (the run aborted), whose question no one may
-    /// answer any more. Before the fix the clients kept the cancelled
-    /// question and each answer to it failed with an error.
+    /// Every end of a question's wait tells the clients to drop it and how
+    /// it ended: the answer of one client (the others still show it), and
+    /// a step whose wait was cancelled (the run aborted, or its budget's
+    /// deadline passed), whose question no one may answer any more: not
+    /// approved. Before the fix the clients kept the cancelled question
+    /// and each answer to it failed with an error.
     #[tokio::test]
     async fn every_end_of_a_wait_settles_the_question_for_the_clients() {
         let approvals = approvals(&["tui", "dashboard"]);
         let mut frames = approvals.events.subscribe();
-        let settled = |request_id: &str| {
+        let settled = |request_id: &str, outcome: &str| {
             json!({
                 "type": "shell_approval_settled",
                 "activeSessionId": "sess-1",
                 "requestId": request_id,
+                "outcome": outcome,
             })
         };
         let asking = tokio::spawn({
@@ -582,7 +598,7 @@ mod tests {
         next_frame(&mut frames).await;
         approvals.answer(&json!({ "requestId": "r1", "verdict": "approve" }));
         assert_eq!(asking.await.unwrap(), ShellAnswer::Approve);
-        assert_eq!(settled_frame(&mut frames).await, settled("r1"));
+        assert_eq!(settled_frame(&mut frames).await, settled("r1", "approved"));
 
         let cancelled = tokio::spawn({
             let approvals = approvals.clone();
@@ -591,7 +607,10 @@ mod tests {
         next_frame(&mut frames).await;
         cancelled.abort();
         assert!(cancelled.await.unwrap_err().is_cancelled());
-        assert_eq!(settled_frame(&mut frames).await, settled("119:0"));
+        assert_eq!(
+            settled_frame(&mut frames).await,
+            settled("119:0", "stopped")
+        );
         assert_eq!(
             approvals.answer(&json!({ "requestId": "119:0", "verdict": "approve" })),
             response_failure(
@@ -607,10 +626,10 @@ mod tests {
     /// A chain of real sessions, the asker first: each hands a question up
     /// through its parent's real `relay_shell_approval` handler (in place of
     /// the supervisor link, which only carries the command). Each entry:
-    /// the session's attached client ids and its gateway client ids.
-    fn chain(sessions: &[(&[&str], &[&str])]) -> Vec<ShellApprovals> {
+    /// the session's attached client ids.
+    fn chain(sessions: &[&[&str]]) -> Vec<ShellApprovals> {
         let mut built: Vec<ShellApprovals> = Vec::new();
-        for (at, (attached, gateway)) in sessions.iter().enumerate().rev() {
+        for (at, attached) in sessions.iter().enumerate().rev() {
             let mut core = SessionCore::test_core("/tmp".to_string());
             core.session_name = Some(if at == 0 {
                 "scout".to_string()
@@ -618,7 +637,6 @@ mod tests {
                 format!("s{at}")
             });
             core.attached_client_ids = attached.iter().map(ToString::to_string).collect();
-            core.gateway_client_ids = gateway.iter().map(ToString::to_string).collect();
             let relay: Relay = match built.last().cloned() {
                 Some(parent) => {
                     let parent_id = format!("session-{}", at + 1);
@@ -645,20 +663,19 @@ mod tests {
         built
     }
 
-    /// Detach every interactive client of `approvals`' session.
-    fn interactive_clients_leave(approvals: &ShellApprovals) {
-        let mut guard = approvals.core.lock().unwrap();
-        let core = &mut *guard;
+    /// Detach every client of `approvals`' session but those of `staying`.
+    fn clients_leave(approvals: &ShellApprovals, staying: &[&str]) {
+        let mut core = approvals.core.lock().unwrap();
         core.attached_client_ids
-            .retain(|id| core.gateway_client_ids.contains(id));
-        approvals.detached(core);
+            .retain(|id| staying.contains(&id.as_str()));
+        approvals.detached(&core);
     }
 
     /// A subagent with no client asks: the question goes up to the root,
     /// whose frame names the subagent; the root's denial is the verdict.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_subagents_question_reaches_the_root_and_its_answer_comes_back() {
-        let sessions = chain(&[(&[], &[]), (&[], &[]), (&["tui"], &[])]);
+        let sessions = chain(&[&[], &[], &["tui"]]);
         let mut root_frames = sessions[2].events.subscribe();
         let asking = tokio::spawn({
             let asker = sessions[0].clone();
@@ -679,7 +696,7 @@ mod tests {
     /// is settled there and goes up; the parent's client approves.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_question_its_clients_leave_goes_up_the_chain() {
-        let sessions = chain(&[(&["tui-0"], &[]), (&["tui-1"], &[])]);
+        let sessions = chain(&[&["tui-0"], &["tui-1"]]);
         let mut child_frames = sessions[0].events.subscribe();
         let mut parent_frames = sessions[1].events.subscribe();
         let asking = tokio::spawn({
@@ -687,11 +704,8 @@ mod tests {
             async move { asker.ask(request("call-1:0")).await }
         });
         assert_eq!(next_frame(&mut child_frames).await["agent"], Value::Null);
-        interactive_clients_leave(&sessions[0]);
-        assert_eq!(
-            settled_frame(&mut child_frames).await["requestId"],
-            "call-1:0"
-        );
+        clients_leave(&sessions[0], &[]);
+        assert_eq!(settled_frame(&mut child_frames).await["outcome"], "relayed");
         assert_eq!(next_frame(&mut parent_frames).await["agent"], "scout");
         // The child's clients are gone: an answer there finds nothing.
         assert!(
@@ -705,30 +719,57 @@ mod tests {
         assert_eq!(asking.await.unwrap(), ShellAnswer::Approve);
     }
 
-    /// The interactive client leaves while the phone gateway stays: the
-    /// gateway rule answers there (a protected-path write is refused), and
-    /// nothing goes up the chain (the parent would panic on a relay).
+    /// Regression (G5, I5: silence is never a yes): the TUI leaves while the
+    /// phone gateway stays. The question stays open for the phone, which
+    /// asks over Signal: no rule runs or refuses the step for it, and
+    /// nothing goes up the chain (the parent would panic on a relay). The
+    /// phone's answer decides. Before, the gateway rule answered at once:
+    /// it ran every step that wrote no protected path, unasked.
     #[tokio::test(flavor = "multi_thread")]
-    async fn a_question_left_to_the_gateway_is_ruled_there() {
-        let sessions = chain(&[(&["tui", "phone"], &["phone"])]);
+    async fn a_question_left_to_the_phone_waits_for_its_answer() {
+        let sessions = chain(&[&["tui", "phone"]]);
         let mut frames = sessions[0].events.subscribe();
         let asking = tokio::spawn({
             let asker = sessions[0].clone();
-            async move {
-                asker
-                    .ask(ShellApprovalRequest {
-                        effects: eukhe_types::shell::ShellEffects::of(&[
-                            eukhe_types::shell::ShellEffect::Write,
-                            eukhe_types::shell::ShellEffect::Protected,
-                        ]),
-                        ..request("call-1:0")
-                    })
-                    .await
-            }
+            async move { asker.ask(request("call-1:0")).await }
         });
         next_frame(&mut frames).await;
-        interactive_clients_leave(&sessions[0]);
-        assert_eq!(asking.await.unwrap(), ShellAnswer::GatewayRefused);
+        clients_leave(&sessions[0], &["phone"]);
+        assert_eq!(sessions[0].lock_office().open.len(), 1);
+        let denied = sessions[0].answer(&json!({ "requestId": "call-1:0", "verdict": "deny" }));
+        assert!(denied.success, "{denied:?}");
+        assert_eq!(
+            (
+                asking.await.unwrap(),
+                settled_frame(&mut frames).await["outcome"].clone()
+            ),
+            (ShellAnswer::Deny, json!("denied"))
+        );
+    }
+
+    /// A session whose only client is the phone gateway shows the question
+    /// (the gateway sends it over Signal) and waits; when the phone leaves
+    /// without an answer at a root, the step is not approved.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_phone_only_session_asks_and_its_silence_is_no_yes() {
+        let approvals = approvals(&["phone"]);
+        let mut frames = approvals.events.subscribe();
+        let asking = tokio::spawn({
+            let approvals = approvals.clone();
+            async move { approvals.ask(request("call-1:0")).await }
+        });
+        assert_eq!(
+            next_frame(&mut frames).await["request"]["requestId"],
+            "call-1:0"
+        );
+        clients_leave(&approvals, &[]);
+        assert_eq!(
+            (
+                asking.await.unwrap(),
+                settled_frame(&mut frames).await["outcome"].clone()
+            ),
+            (ShellAnswer::Unanswered, json!("unanswered"))
+        );
     }
 
     /// Two questions with the same request id (two subagents' first steps)
@@ -768,7 +809,7 @@ mod tests {
     /// question is settled.
     #[tokio::test(flavor = "multi_thread")]
     async fn a_cancelled_subagent_step_settles_its_question_up_the_chain() {
-        let sessions = chain(&[(&[], &[]), (&["tui"], &[])]);
+        let sessions = chain(&[&[], &["tui"]]);
         let mut root_frames = sessions[1].events.subscribe();
         let asking = tokio::spawn({
             let asker = sessions[0].clone();

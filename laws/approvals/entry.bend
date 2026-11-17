@@ -22,7 +22,7 @@ import ../base.bend as LawsBase
 #     (`Am.default_auto`); any other input answers exactly the error form
 #     "approvals: malformed request" (approvals_ffi_left_over; the one
 #     input with no text: the anchor approvals_ffi_example; what the set
-#     holds: laws/tools.bend default_auto_is_grantable).
+#     holds: laws/tools.bend default_auto_is_reversible).
 # R2: the desk opens empty (the first key next) on no input; an open with
 #     input opens the refused state, which answers every step "approvals:
 #     the open was refused" (approvals_desk_entry_open_refused,
@@ -56,28 +56,24 @@ def spell_ns(xs: List<&2, Nat>, rest: String) -> String:
 def spell_here(h: Am.Here) -> Nat:
   match h:
     case Am.Nobody{}:
-      0n  # approvals.rs:164 Here::Nobody => 0
-    case Am.GatewayOnly{}:
-      1n  # approvals.rs:165 Here::GatewayOnly => 1
+      0n  # approvals.rs:161 Here::Nobody => 0
     case Am.Clients{}:
-      2n  # approvals.rs:166 Here::Clients => 2
+      1n  # approvals.rs:162 Here::Clients => 1
 
 # a list of Nats fits the wire: its length and each item
 def ns_fit(+xs: List<&2, Nat>) -> Bool:
   Bool.and(LawsBase.wire_fits(List.length(&2, Nat, xs)), LawsBase.wire_nats_fit(xs))
 
-# a fate: runs 0, denied 1, unanswered 2, refused by the gateway rule 3
-# (written by `back`, read by `fate`)
+# a fate: runs 0, denied 1, unanswered 2 (written by `back`, read by
+# `fate`)
 def spell_fate(f: Am.Fate, rest: String) -> String:
   match f:
     case Am.Runs{}:
-      Wr.put_nat(0n, rest)  # approvals.rs:148 Approve => 0; :212 0 => Approve
+      Wr.put_nat(0n, rest)  # approvals.rs:146 Approve => 0; :208 0 => Approve
     case Am.Denied{}:
-      Wr.put_nat(1n, rest)  # approvals.rs:149 Deny => 1; :213 1 => Deny
+      Wr.put_nat(1n, rest)  # approvals.rs:147 Deny => 1; :209 1 => Deny
     case Am.Unheard{}:
-      Wr.put_nat(2n, rest)  # approvals.rs:150 Unanswered => 2; :214 2 => Unanswered
-    case Am.GatewayRefused{}:
-      Wr.put_nat(3n, rest)  # approvals.rs:151 GatewayRefused => 3; :216 _ (3) => GatewayRefused
+      Wr.put_nat(2n, rest)  # approvals.rs:148 Unanswered => 2; :211 _ (2) => Unanswered
 
 # the error form of a call with input
 def malformed() -> String:
@@ -91,15 +87,15 @@ def malformed_event() -> String:
 def spell_ev(e: Am.Ev, rest: String) -> String:
   match e:
     case Am.EAsk{id, es, h, p}:
-      Wr.put_nat(0n, Wr.put_str(id, spell_ns(es, Wr.put_nat(spell_here(h), Wr.put_bool(p, rest)))))  # approvals.rs:101-106 tag(0).str(id), count + codes, tag(here).bool(parent)
+      Wr.put_nat(0n, Wr.put_str(id, spell_ns(es, Wr.put_nat(spell_here(h), Wr.put_bool(p, rest)))))  # approvals.rs:99-104 tag(0).str(id), count + codes, tag(here).bool(parent)
     case Am.EAnswer{id, y}:
-      Wr.put_nat(1n, Wr.put_str(id, Wr.put_bool(y, rest)))  # approvals.rs:121 tag(1).str(id).bool(yes)
+      Wr.put_nat(1n, Wr.put_str(id, Wr.put_bool(y, rest)))  # approvals.rs:119 tag(1).str(id).bool(yes)
     case Am.EDetach{h, p}:
-      Wr.put_nat(2n, Wr.put_nat(spell_here(h), Wr.put_bool(p, rest)))  # approvals.rs:130-132 tag(2).tag(here).bool(parent)
+      Wr.put_nat(2n, Wr.put_nat(spell_here(h), Wr.put_bool(p, rest)))  # approvals.rs:128-130 tag(2).tag(here).bool(parent)
     case Am.ECancel{k}:
-      Wr.put_nat(3n, Wr.put_nat(k, rest))  # approvals.rs:139 tag(3).nat(key)
+      Wr.put_nat(3n, Wr.put_nat(k, rest))  # approvals.rs:137 tag(3).nat(key)
     case Am.EBack{k, f}:
-      Wr.put_nat(4n, Wr.put_nat(k, spell_fate(f, rest)))  # approvals.rs:147 tag(4).nat(key).tag(fate)
+      Wr.put_nat(4n, Wr.put_nat(k, spell_fate(f, rest)))  # approvals.rs:145 tag(4).nat(key).tag(fate)
 
 # every length and number of the event fits the wire
 def ev_fits(e: Am.Ev) -> Bool:
@@ -125,17 +121,17 @@ def evs_fit(es: List<&2, Am.Ev>) -> Bool:
 def spell_act(a: Am.Act, rest: String) -> String:
   match a:
     case Am.AShow{k}:
-      Wr.put_nat(0n, Wr.put_nat(k, rest))  # approvals.rs:176 0 => Show(key)
+      Wr.put_nat(0n, Wr.put_nat(k, rest))  # approvals.rs:172 0 => Show(key)
     case Am.ASettle{k}:
-      Wr.put_nat(1n, Wr.put_nat(k, rest))  # approvals.rs:177 1 => Settle(key)
+      Wr.put_nat(1n, Wr.put_nat(k, rest))  # approvals.rs:173 1 => Settle(key)
     case Am.ARelay{k}:
-      Wr.put_nat(2n, Wr.put_nat(k, rest))  # approvals.rs:178 2 => Relay(key)
+      Wr.put_nat(2n, Wr.put_nat(k, rest))  # approvals.rs:174 2 => Relay(key)
     case Am.AWake{k, f}:
-      Wr.put_nat(3n, Wr.put_nat(k, spell_fate(f, rest)))  # approvals.rs:179-181 3 => Wake(key, fate)
+      Wr.put_nat(3n, Wr.put_nat(k, spell_fate(f, rest)))  # approvals.rs:175-177 3 => Wake(key, fate)
     case Am.ATook{}:
-      Wr.put_nat(4n, rest)  # approvals.rs:183 4 => Took
+      Wr.put_nat(4n, rest)  # approvals.rs:179 4 => Took
     case Am.AGone{}:
-      Wr.put_nat(5n, rest)  # approvals.rs:185 _ (5) => Gone
+      Wr.put_nat(5n, rest)  # approvals.rs:181 _ (5) => Gone
 
 def spell_acts.items(as: List<&2, Am.Act>) -> String:
   match as:
@@ -144,13 +140,13 @@ def spell_acts.items(as: List<&2, Am.Act>) -> String:
     case a <> t:
       spell_act(a, spell_acts.items(t))
 
-# the acts: their count, then each, then the end (approvals.rs:171-188
+# the acts: their count, then each, then the end (approvals.rs:167-184
 # `read_acts`: count, each act, reader.end)
 def spell_acts(+as: List<&2, Am.Act>) -> String:
   Wr.put_nat(List.length(&2, Am.Act, as), spell_acts.items(as))
 
-# the reply to e: an ask's leads with its key n (approvals.rs:109 `ask`
-# reads the key, then the acts; :156-158 every other event reads the acts)
+# the reply to e: an ask's leads with its key n (approvals.rs:107 `ask`
+# reads the key, then the acts; :153-156 every other event reads the acts)
 def spell_reply(e: Am.Ev, +n: Nat, +as: List<&2, Am.Act>) -> String:
   match e:
     case Am.EAsk{id, es, h, p}:
@@ -240,12 +236,13 @@ law approvals_ffi_left_over:
   for some: {String.is_empty(more) == False{} : Bool}
   {FAm.ffi(more) == malformed() : String}
 
-# LAW approvals_ffi_example (changed 2026-10-27 by the user: secrets never
-# ask again; the default auto set holds every effect): anchor: the bytes
+# LAW approvals_ffi_example (changed 2026-11-16 by the owner: the default
+# auto set holds the reversible effects read, write, exec; before, from
+# 2026-10-27, every effect): anchor: the bytes
 # of the call and its reply; a call with input is refused
 # EXCLUDES: another spelling of the reply
 law approvals_ffi_example:
-  {FAm.ffi("") == "7,0,1,2,3,4,5,6," : String} & {FAm.ffi("2,") == malformed() : String}
+  {FAm.ffi("") == "3,0,1,2," : String} & {FAm.ffi("2,") == malformed() : String}
 
 # The desk
 # --------
@@ -339,12 +336,14 @@ law approvals_desk_entry_history:
 # LAW approvals_desk_entry_example (R3): anchor: the bytes Rust sends and
 # the replies: a question shown (key 0), a relayed one (key 1), the
 # answer of the first (settle, wake: runs, took), a second answer to it
-# (gone), the parent's answer to the relay (wake: denied), a gateway-only
-# protected-path write (wake at once: refused), a gateway-only secret read
-# (wake at once: runs), an unknown tag, input left over
+# (gone), the parent's answer to the relay (wake: denied), a
+# protected-path write a client is attached for (shown, key 2), a secret
+# read at a root with no client (wake at once: unanswered), an unknown
+# tag, input left over, a who-answers tag past the clients (2) and a fate
+# past unanswered (3), both refused
 # EXCLUDES: another spelling of an event or a reply
 law approvals_desk_entry_example:
-  {dk_raw(["0,1,a1,1,2,F", "0,1,b1,1,0,T", "1,1,aT", "1,1,aT", "4,1,1,", "0,1,c1,5,1,F", "0,1,d1,6,1,F", "9,", "3,0,x"], FAm.open("")) == ["", "0,1,0,0,", "1,1,2,1,", "3,1,0,3,0,0,4,", "1,5,", "1,3,1,1,", "2,1,3,2,3,", "3,1,3,3,0,", malformed_event(), malformed_event()] : List<&2, String>}
+  {dk_raw(["0,1,a1,1,1,F", "0,1,b1,1,0,T", "1,1,aT", "1,1,aT", "4,1,1,", "0,1,c1,5,1,F", "0,1,d1,6,0,F", "9,", "3,0,x", "0,1,e1,1,2,F", "4,2,3,"], FAm.open("")) == ["", "0,1,0,0,", "1,1,2,1,", "3,1,0,3,0,0,4,", "1,5,", "1,3,1,1,", "2,1,0,2,", "3,1,3,3,2,", malformed_event(), malformed_event(), malformed_event(), malformed_event()] : List<&2, String>}
 
 # LAW approvals_desk_fits_example (R3): witness: events of each kind Rust
 # sends fit the wire (the desk entry laws are not vacuous)

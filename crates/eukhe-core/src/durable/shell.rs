@@ -105,7 +105,6 @@ impl Approver for SinkApprover {
             ShellAnswer::Approve => Answer::Approve,
             ShellAnswer::Deny => Answer::Deny,
             ShellAnswer::Unanswered => Answer::Unanswered,
-            ShellAnswer::GatewayRefused => Answer::GatewayRefused,
         }
     }
 }
@@ -128,16 +127,10 @@ impl RefusalText {
                 next: "Do not try it again unless the user asks for it",
             },
             Refusal::Unanswered => Self {
-                what: "it needs the user's approval, and no client answered",
+                what: "not approved: it needs the user's approval, and no client answered",
                 next:
                     "Ask the user to attach a client, or to allow its effect in shell.autoEffects \
 if that is read, write, exec, net, outside, protected or secret; or use read-only steps",
-            },
-            Refusal::GatewayRefused => Self {
-                what: "the session runs only from the phone gateway, and from there a step that \
-writes eukhe's protected files (its config and credentials, a .git or .eukhe dir, a PATH dir) \
-never runs when the user's auto set does not already run it",
-                next: "Ask the user to run it from the eukhe TUI or the dashboard",
             },
         }
     }
@@ -148,7 +141,6 @@ never runs when the user's auto set does not already run it",
             ShellAnswer::Approve => None,
             ShellAnswer::Deny => Some(Self::of(Refusal::Denied)),
             ShellAnswer::Unanswered => Some(Self::of(Refusal::Unanswered)),
-            ShellAnswer::GatewayRefused => Some(Self::of(Refusal::GatewayRefused)),
         }
     }
 }
@@ -478,7 +470,6 @@ async fn execute(
             "refusal": match refusal {
                 Refusal::Denied => "denied",
                 Refusal::Unanswered => "unanswered",
-                Refusal::GatewayRefused => "gateway_refused",
             },
         }),
     };

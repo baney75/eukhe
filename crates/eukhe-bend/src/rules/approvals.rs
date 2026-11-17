@@ -22,9 +22,7 @@ use crate::{call, expect_core, Entry, Error, Stepper};
 pub enum Here {
     /// No client is attached.
     Nobody,
-    /// Clients are attached, and all are the phone gateway.
-    GatewayOnly,
-    /// An interactive client is attached.
+    /// A client is attached (the TUI, the dashboard, the phone gateway).
     Clients,
 }
 
@@ -148,7 +146,6 @@ impl Desk {
             ShellAnswer::Approve => 0,
             ShellAnswer::Deny => 1,
             ShellAnswer::Unanswered => 2,
-            ShellAnswer::GatewayRefused => 3,
         });
         expect_core(Entry::Approvals, self.event(&mut event))
     }
@@ -162,8 +159,7 @@ impl Desk {
 fn here_code(here: Here) -> u32 {
     match here {
         Here::Nobody => 0,
-        Here::GatewayOnly => 1,
-        Here::Clients => 2,
+        Here::Clients => 1,
     }
 }
 
@@ -208,12 +204,11 @@ fn default_auto_call() -> Result<AutoSet, Error> {
 
 /// A step's fate (`Am.Fate`) as the answer the gate reads.
 fn fate(reader: &mut Reader<'_>) -> Result<ShellAnswer, WireError> {
-    Ok(match reader.tag_of(4, "a step's fate")? {
+    Ok(match reader.tag_of(3, "a step's fate")? {
         0 => ShellAnswer::Approve,
         1 => ShellAnswer::Deny,
-        2 => ShellAnswer::Unanswered,
-        // `tag_of` answers a tag below 4: this is 3.
-        _ => ShellAnswer::GatewayRefused,
+        // `tag_of` answers a tag below 3: this is 2.
+        _ => ShellAnswer::Unanswered,
     })
 }
 
@@ -229,13 +224,12 @@ mod tests {
     #[test]
     fn the_desk_runs_in_the_core() {
         let write = ShellEffects::of(&[ShellEffect::Write]);
-        let protected = ShellEffects::of(&[ShellEffect::Write, ShellEffect::Protected]);
         let mut desk = Desk::open();
         let shown = desk
             .ask("call-1:0", write, Here::Clients, Parent::Above)
             .unwrap();
-        let ruled = desk
-            .ask("call-2:0", protected, Here::GatewayOnly, Parent::Root)
+        let unheard = desk
+            .ask("call-2:0", write, Here::Nobody, Parent::Root)
             .unwrap();
         let relayed = desk
             .ask("call-3:0", write, Here::Nobody, Parent::Above)
@@ -249,10 +243,10 @@ mod tests {
         let detached = desk.detach(Here::Nobody, Parent::Root);
         let cancelled = desk.cancel(Key(3));
         assert_eq!(
-            (shown, ruled, relayed, denied, again, back, left, detached, cancelled),
+            (shown, unheard, relayed, denied, again, back, left, detached, cancelled),
             (
                 (Key(0), vec![Act::Show(Key(0))]),
-                (Key(1), vec![Act::Wake(Key(1), ShellAnswer::GatewayRefused)]),
+                (Key(1), vec![Act::Wake(Key(1), ShellAnswer::Unanswered)]),
                 (Key(2), vec![Act::Relay(Key(2))]),
                 vec![
                     Act::Settle(Key(0)),
@@ -269,6 +263,9 @@ mod tests {
                 vec![],
             )
         );
-        assert_eq!(default_auto(), AutoSet::new(ShellEffect::ALL));
+        assert_eq!(
+            default_auto(),
+            AutoSet::new([ShellEffect::Read, ShellEffect::Write, ShellEffect::Exec])
+        );
     }
 }

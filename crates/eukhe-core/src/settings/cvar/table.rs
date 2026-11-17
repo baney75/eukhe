@@ -1290,17 +1290,22 @@ pub(crate) const SHELL_EFFECTS: &[&str] = &[
     "secret",
 ];
 
-/// The effects a shell command may have without asking; by default all
-/// seven effects (law `default_auto_is_grantable`): every effect is
-/// grantable, and a read or write of a secret never asks. An execution
-/// gate: an untrusted project may not set it and an agent never saves it.
+/// The shipped grant: the reversible effects (spec/README.md I1, law
+/// `default_auto_is_reversible`).
+const SHELL_REVERSIBLE_EFFECTS: &[&str] = &["read", "write", "exec"];
+
+/// The effects a shell command may have without the principal's approval;
+/// by default the reversible ones: read, write and exec inside the
+/// workspace. A step with any other effect waits for `/approve`. An
+/// execution gate: an untrusted project may not set it and an agent never
+/// saves it.
 pub const SHELL_AUTO_EFFECTS: Decl = Decl {
     id: "shell.autoEffects",
     ty: CvarType::ChoiceList(SHELL_EFFECTS),
     scope: CvarScope::Local,
     persist: false,
     replicate: false,
-    init: Init::List(SHELL_EFFECTS),
+    init: Init::List(SHELL_REVERSIBLE_EFFECTS),
 };
 
 /// The hosts an `ssh://` read may reach : new

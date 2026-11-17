@@ -40,7 +40,3 @@ def pa.nearest(+below: List<&2, Am.Desk>, quiet: {Am.quiet(below) == True{} : Bo
           pa.end_first_up_is(Am.route(List.append(&2, Am.Desk, rest, Am.Says{yes} <> above)), Am.Answered{List.length(&2, Am.Desk, rest), yes}, pa.nearest(rest, quiet, yes, above))
         case Am.Says{z}:
           LLogicLogic.approvals.pa.absurdF({Am.Out.end(Am.route(List.append(&2, Am.Desk, Am.Says{z} <> rest, Am.Says{yes} <> above))) == Am.Answered{List.length(&2, Am.Desk, Am.Says{z} <> rest), yes} : Am.End}, quiet)
-        case Am.Phone{}:
-          LLogicLogic.approvals.pa.absurdF({Am.Out.end(Am.route(List.append(&2, Am.Desk, Am.Phone{} <> rest, Am.Says{yes} <> above))) == Am.Answered{List.length(&2, Am.Desk, Am.Phone{} <> rest), yes} : Am.End}, quiet)
-        case Am.PhoneLeft{}:
-          LLogicLogic.approvals.pa.absurdF({Am.Out.end(Am.route(List.append(&2, Am.Desk, Am.PhoneLeft{} <> rest, Am.Says{yes} <> above))) == Am.Answered{List.length(&2, Am.Desk, Am.PhoneLeft{} <> rest), yes} : Am.End}, quiet)

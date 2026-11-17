@@ -5,10 +5,8 @@
 //! one `shell_approval` frame per gated step and answers with
 //! `answer_shell_approval`: it approves the first write and denies the
 //! second, so the script stops there. With no client attached no one is
-//! asked, and the first gated step is refused as unanswered. With only the
-//! phone gateway attached no one is asked either: the gateway rule runs a
-//! write and a run of a program at once and refuses a write of eukhe's own
-//! config at once.
+//! asked, and the first gated step is refused as unanswered. The phone
+//! gateway is asked like any other client.
 
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
@@ -305,13 +303,13 @@ fn with_no_client_attached_a_gated_step_is_refused_unanswered() {
     );
 }
 
-/// Regression (G5): the phone gateway shows no approval question, so a
-/// gated step of a session driven only from the phone waited for an
-/// answer that never came.
+/// Regression (I5, I9): the phone gateway answered steps itself (a step
+/// that wrote no protected path ran unasked). It is an ordinary client
+/// now, a gateway of an earlier release attaching as `gateway` too: it
+/// gets the question, and its no refuses the step.
 #[test]
-fn a_phone_only_session_runs_steps_unasked_and_refuses_a_protected_write() {
+fn the_phone_gateway_is_asked_like_any_client() {
     let dir = tempfile::TempDir::new().expect("temp dir");
-    std::fs::create_dir_all(dir.path().join(".eukhe")).expect("project config dir");
     let (_daemon, mut client, session) = open(dir.path(), PHONE_SCRIPT);
     let attached = client.command(
         "a1",
@@ -327,30 +325,25 @@ fn a_phone_only_session_runs_steps_unasked_and_refuses_a_protected_write() {
         "p1",
         &json!({ "type": "prompt", "activeSessionId": session, "message": "write the files" }),
     );
+    let frame = client.approval();
+    client.command(
+        "v0",
+        &json!({
+            "type": "answer_shell_approval",
+            "activeSessionId": session,
+            "requestId": frame["request"]["requestId"],
+            "verdict": "deny",
+        }),
+    );
     client.command(
         "w1",
         &json!({ "type": "wait_for_idle", "activeSessionId": session }),
     );
-    let result = tool_result(&mut client, &session);
-    println!("result: {result}");
-    let read = |name: &str| std::fs::read_to_string(dir.path().join(name)).ok();
     assert_eq!(
         (
-            result,
-            client.approvals.len(),
-            read("written.txt"),
-            read("ran.txt"),
-            read(".eukhe/settings.json"),
-            read("never.txt"),
+            frame["request"]["command"].clone(),
+            dir.path().join("written.txt").exists(),
         ),
-        (
-            "$ echo one >written.txt\n$ sh -c 'echo two > ran.txt'\n[stopped at step 2 (read+write+protected): `echo three >.eukhe/settings.json` and the steps after it did not run: the session runs only from the phone gateway, and from there a step that writes eukhe's protected files (its config and credentials, a .git or .eukhe dir, a PATH dir) never runs when the user's auto set does not already run it. Ask the user to run it from the eukhe TUI or the dashboard.]\n"
-                .to_owned(),
-            0,
-            Some("one\n".to_owned()),
-            Some("two\n".to_owned()),
-            None,
-            None,
-        )
+        (json!("echo one >written.txt"), false)
     );
 }

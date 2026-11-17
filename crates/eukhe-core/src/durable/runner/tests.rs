@@ -24,9 +24,9 @@ const DENIED: &str =
     "python did not run (exec): the user denied it. Do not try it again unless the user asks for it.";
 
 /// What an unanswered cell's call says.
-const UNANSWERED: &str = "python did not run (exec): it needs the user's approval, and no client \
-answered. Ask the user to attach a client, or to allow its effect in shell.autoEffects if that is \
-read, write, exec, net, outside, protected or secret; or use read-only steps.";
+const UNANSWERED: &str = "python did not run (exec): not approved: it needs the user's approval, \
+and no client answered. Ask the user to attach a client, or to allow its effect in shell.autoEffects \
+if that is read, write, exec, net, outside, protected or secret; or use read-only steps.";
 
 /// Who answers a call's question.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

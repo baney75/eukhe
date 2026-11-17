@@ -216,17 +216,32 @@ pub enum ShellVerdict {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShellAnswer {
-    /// A client approved the step, or the session runs only from the
-    /// phone gateway and the step is not guarded: it runs.
+    /// A client (the TUI, the dashboard, the phone gateway) approved the
+    /// step: it runs.
     Approve,
     /// A client denied the step.
     Deny,
     /// No session up the chain had a client that answered: a denial.
     Unanswered,
-    /// The session runs only from the phone gateway, and the step writes a
-    /// protected path ([`ShellEffect::Protected`]) that the narrowed auto
-    /// set does not run: refused at once.
-    GatewayRefused,
+}
+
+/// How a question's wait on a session's clients ended (the
+/// `shell_approval_settled` frame).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ShellApprovalOutcome {
+    /// A client approved the step: it runs.
+    Approved,
+    /// A client denied the step.
+    Denied,
+    /// Every client left and no session up the chain answered: not
+    /// approved.
+    Unanswered,
+    /// Every client left: the question went up to the parent session.
+    Relayed,
+    /// The step stopped waiting (its run was stopped, or ran out of
+    /// time): not approved.
+    Stopped,
 }
 
 #[cfg(test)]

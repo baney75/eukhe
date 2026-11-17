@@ -368,23 +368,18 @@ async fn a_resume_never_runs_a_bash_call_a_crash_interrupted_again() {
 /// refusal's text, and each text ends with a next step for the model.
 #[test]
 fn every_refusal_text_names_what_failed_and_the_next_step() {
-    let next = [
-        Refusal::Denied,
-        Refusal::Unanswered,
-        Refusal::GatewayRefused,
-    ]
-    .map(|refusal| RefusalText::of(refusal).next.is_empty());
+    let next = [Refusal::Denied, Refusal::Unanswered]
+        .map(|refusal| RefusalText::of(refusal).next.is_empty());
     let texts = [
         ShellAnswer::Approve,
         ShellAnswer::Deny,
         ShellAnswer::Unanswered,
-        ShellAnswer::GatewayRefused,
     ]
     .map(|answer| RefusalText::of_answer(answer).map(|text| text.to_string()));
     assert_eq!(
         (next, texts),
         (
-            [false, false, false],
+            [false, false],
             [
                 None,
                 Some(
@@ -392,16 +387,9 @@ fn every_refusal_text_names_what_failed_and_the_next_step() {
                         .to_owned()
                 ),
                 Some(
-                    "it needs the user's approval, and no client answered. Ask the user to attach \
-a client, or to allow its effect in shell.autoEffects if that is read, write, exec, net, \
-outside, protected or secret; or use read-only steps."
-                        .to_owned()
-                ),
-                Some(
-                    "the session runs only from the phone gateway, and from there a step that \
-writes eukhe's protected files (its config and credentials, a .git or .eukhe dir, a PATH dir) \
-never runs when the user's auto set does not already run it. Ask the user to run it from the \
-eukhe TUI or the dashboard."
+                    "not approved: it needs the user's approval, and no client answered. Ask the \
+user to attach a client, or to allow its effect in shell.autoEffects if that is read, write, \
+exec, net, outside, protected or secret; or use read-only steps."
                         .to_owned()
                 ),
             ]
@@ -411,7 +399,7 @@ eukhe TUI or the dashboard."
 
 /// The auto set of a session whose user sets no `shell.autoEffects` is
 /// the compiled core's default (`bend/approvals.bend` `default_auto`, law
-/// `default_auto_is_grantable`).
+/// `default_auto_is_reversible`): read, write, exec.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_default_auto_set_is_its_model() {
     let fixture = Fixture::new();

@@ -351,11 +351,12 @@ pub enum DaemonOutbound {
     /// Rust-native, advertised by the `shell_approval` capability: the
     /// question `request_id` of the session is no longer pending (a
     /// client answered it, its step ended or was cancelled, or every
-    /// interactive client detached and it went elsewhere): every client
-    /// drops it. Unsequenced, like `shell_approval`.
+    /// client detached and it went elsewhere): every client drops it.
+    /// `outcome` says how. Unsequenced, like `shell_approval`.
     ShellApprovalSettled {
         active_session_id: String,
         request_id: String,
+        outcome: crate::shell::ShellApprovalOutcome,
         #[serde(flatten)]
         rest: JsonMap,
     },

@@ -185,7 +185,7 @@ async fn execute(
     // kernel, job or budget before the answer.
     let auto = auto_set(&runtime.deps.settings);
     if runners::within(auto, caps) == gate::Gate::Asks {
-        let (asker, answer) = match &runtime.deps.shell_approval {
+        let asker = match &runtime.deps.shell_approval {
             Some(sink) => {
                 let request = ShellApprovalRequest {
                     request_id: format!("{}:cell", api.task_id()),
@@ -199,18 +199,16 @@ async fn execute(
                         return Err(aborted(cx).unwrap_or_else(|| SessionError::error("aborted")));
                     }
                 };
-                let asker = match answer {
+                match answer {
                     ShellAnswer::Approve => Asker::Says(Said::Yes),
-                    ShellAnswer::Deny | ShellAnswer::GatewayRefused => Asker::Says(Said::No),
+                    ShellAnswer::Deny => Asker::Says(Said::No),
                     ShellAnswer::Unanswered => Asker::Silent,
-                };
-                (asker, answer)
+                }
             }
-            None => (Asker::NoClient, ShellAnswer::Unanswered),
+            None => Asker::NoClient,
         };
         let refusal = match runners::cell(auto, caps, asker) {
             Ended::RanUnasked | Ended::RanApproved => None,
-            Ended::Denied if answer == ShellAnswer::GatewayRefused => Some(Refusal::GatewayRefused),
             Ended::Denied => Some(Refusal::Denied),
             Ended::Unanswered => Some(Refusal::Unanswered),
         };

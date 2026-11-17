@@ -488,6 +488,7 @@ impl SessionUi {
             DaemonClientEvent::ShellApprovalSettled {
                 active_session_id,
                 request_id,
+                outcome: _,
             } => {
                 if active_session_id == self.active_session_id {
                     self.shell_approvals

@@ -21,9 +21,6 @@ def arr.q(w: Am.Wait, +k: Nat, +i: String, +es: List<&2, Nat>, h: Am.Here, r: Li
         case Am.Nobody{}:
           (qs, as) = r
           ih
-        case Am.GatewayOnly{}:
-          (qs, as) = r
-          ih
         case Am.Clients{}:
           (qs, as) = r
           ih
@@ -47,8 +44,6 @@ def arr.ask(d: Am.D, +id: String, +es: List<&2, Nat>, h: Am.Here) -> {ApprovalsD
       match h:
         case Am.Nobody{}:
           {==}
-        case Am.GatewayOnly{}:
-          {==}
         case Am.Clients{}:
           {==}
 
@@ -58,8 +53,6 @@ def arr.detach(d: Am.D, h: Am.Here) -> {ApprovalsDesk.ds_any_relay(ApprovalsDesk
       match h:
         case Am.Nobody{}:
           arr.put(n, Am.reroute(qs, Am.Nobody{}, False{}), arr.rr(qs, Am.Nobody{}))
-        case Am.GatewayOnly{}:
-          arr.put(n, Am.reroute(qs, Am.GatewayOnly{}, False{}), arr.rr(qs, Am.GatewayOnly{}))
         case Am.Clients{}:
           {==}
 

@@ -28,8 +28,6 @@ def ae.put_fate(f: Am.Fate, rest: String) -> {FAm.put_fate(f, rest) == Approvals
       {==}
     case Am.Unheard{}:
       {==}
-    case Am.GatewayRefused{}:
-      {==}
 
 def ae.put_act(a: Am.Act, +rest: String) -> {FAm.put_act(a, rest) == ApprovalsEntry.spell_act(a, rest) : String}:
   match a:
@@ -107,12 +105,6 @@ def ae.rt_hp(+id: String, +es: List<&2, Nat>, h: Am.Here, p: Bool, +rest: String
           {==}
         case False{}:
           {==}
-    case Am.GatewayOnly{}:
-      match p:
-        case True{}:
-          {==}
-        case False{}:
-          {==}
     case Am.Clients{}:
       match p:
         case True{}:
@@ -123,12 +115,6 @@ def ae.rt_hp(+id: String, +es: List<&2, Nat>, h: Am.Here, p: Bool, +rest: String
 def ae.rt_detach(h: Am.Here, p: Bool, +rest: String) -> {FAm.get_ev(ApprovalsEntry.spell_ev(Am.EDetach{h, p}, rest)) == Wr.Got{Am.EDetach{h, p}, rest} : Wr.Dec<Am.Ev>}:
   match h:
     case Am.Nobody{}:
-      match p:
-        case True{}:
-          {==}
-        case False{}:
-          {==}
-    case Am.GatewayOnly{}:
       match p:
         case True{}:
           {==}
@@ -160,9 +146,6 @@ def ae.rt_back(+k: Nat, f: Am.Fate, +rest: String, h: {LawsBase.wire_fits(k) == 
       {==}
     case Am.Unheard{}:
       %ae.nat(k, ApprovalsEntry.spell_fate(Am.Unheard{}, rest), h) : {FAm.back.key(_) == Wr.Got{Am.EBack{k, Am.Unheard{}}, rest} : Wr.Dec<Am.Ev>}
-      {==}
-    case Am.GatewayRefused{}:
-      %ae.nat(k, ApprovalsEntry.spell_fate(Am.GatewayRefused{}, rest), h) : {FAm.back.key(_) == Wr.Got{Am.EBack{k, Am.GatewayRefused{}}, rest} : Wr.Dec<Am.Ev>}
       {==}
 
 def ae.BD(b: Bool, t: Type, f: Type) -> Type:

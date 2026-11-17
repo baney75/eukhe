@@ -451,8 +451,9 @@ pub struct FactorySettings {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShellSettings {
-    /// The effects (`read`, `write`, `exec`, `net`) a shell command may
-    /// have without asking; unset is `read` only.
+    /// The effects (`read`, `write`, `exec`, `net`, `outside`, `protected`,
+    /// `secret`) a shell command may have without the principal's approval;
+    /// unset is `read`, `write`, `exec`.
     pub auto_effects: Option<Vec<String>>,
 }
 

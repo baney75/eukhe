@@ -6,8 +6,7 @@
 # further up, its fate (ir.up: `route` moves every session one up and
 # keeps the fate). Left: shown, then the clients leave: relayed the same
 # way, with this session first (ir.first). At a root both end unanswered.
-# Says: shown, then the answer is taken: the answer's fate. Phone: the
-# gateway rule at once. PhoneLeft: shown, then the gateway rule.
+# Says: shown, then the answer is taken: the answer's fate.
 
 import Base
 import ../../bend/approvals.bend as Am
@@ -27,8 +26,6 @@ def ir.fu(+es: List<&2, Nat>, +s: List<&2, Nat>, e: Am.End) -> {(ApprovalsDesk.c
       {==}
     case Am.Unanswered{}:
       {==}
-    case Am.Ruled{a}:
-      {==}
 
 # `route` one session up: every shown session one further, the same fate
 def ir.up(+es: List<&2, Nat>, o: Am.Out) -> {(ApprovalsDesk.ch_up(Am.Out.shown(o)), Am.fate(es, Am.Out.end(o))) == (Am.Out.shown(Am.Out.up(o)), Am.fate(es, Am.Out.end(Am.Out.up(o)))) : List<&2, Nat> & Am.Fate}:
@@ -42,8 +39,6 @@ def ir.fu0(+es: List<&2, Nat>, +s: List<&2, Nat>, e: Am.End) -> {(0n <> Approval
     case Am.Answered{a, y}:
       {==}
     case Am.Unanswered{}:
-      {==}
-    case Am.Ruled{a}:
       {==}
 
 # and with this session first
@@ -79,7 +74,3 @@ def ApprovalsDesk.approvals_desk_is_route(ds, es):
               {==}
             case False{}:
               {==}
-        case Am.Phone{}:
-          {==}
-        case Am.PhoneLeft{}:
-          {==}

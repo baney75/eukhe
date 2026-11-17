@@ -1,11 +1,14 @@
-# approvals: the model of where a question of the approval gate goes (crates/eukhe-daemon/src/shell_approval.rs).
+# approvals: the model of where a question of the approval gate goes in
+# watch mode (crates/eukhe-daemon/src/shell_approval.rs; spec/README.md
+# I5, I9).
 #
 # A `bash` step or an `python` cell runs unasked when its effects are
-# within the auto set (bend/tools.bend `within`); the default auto set is
-# every grantable effect. Any other step asks the user. A chain is the
-# sessions from the one that asks up to its root: the asking session
-# first, then its parent, and so on. Each session, when the question
-# reaches it, is one of:
+# within the grant (bend/tools.bend `within`); the shipped grant is read,
+# write and exec (spec/README.md I1). Any other step, outside watch mode,
+# waits for the principal's approval (bend/irreversible.bend) and nothing
+# is asked. In watch mode it is asked. A chain is the sessions from the one
+# that asks up to its root: the asking session first, then its parent, and
+# so on. Each session, when the question reaches it, is one of:
 #
 #   Away{}       no client is attached: the session hands the question to
 #                its parent at once (`relay_shell_approval`).
@@ -13,24 +16,15 @@
 #                and all of them detach without an answer: the session
 #                hands the question to its parent then.
 #   Says{yes}    its clients get the question, and the first answer
-#                approves (True) or denies (False). The phone gateway may
-#                be attached too: it is not asked.
-#   Phone{}      its only clients are the phone gateway, which shows no
-#                question: no frame, and the gateway rule of the session
-#                answers at once.
-#   PhoneLeft{}  its interactive clients get the question and all detach
-#                without an answer, while the phone gateway stays: the
-#                gateway rule answers then.
+#                approves (True) or denies (False).
 #
-# The question goes up the chain until a session's clients answer or a
-# session's gateway rule does; above the root there is no one, and the
-# question is unanswered (a denial). A frame on a session above the asker
-# names the subagent that asks.
-#
-# The gateway rule: a step that writes a protected path (effect 5) is
-# refused when its question reaches the rule (the user narrowed the auto
-# set past it); every other step runs. The effects are their codes
-# (bend/tools.bend `Eff.code`).
+# The clients are the TUI, the dashboard and the phone gateway, which asks
+# over Signal and sends the phone's answer. The question goes up the
+# chain until a session's clients answer; above the root there is no one,
+# and the question is unanswered: the step waits for an approval
+# (bend/irreversible.bend `settle`). A question no one answers is never a
+# yes. A frame on a session above the asker names the subagent that asks.
+# The effects are their codes (bend/tools.bend `Eff.code`).
 
 import Base
 import ./tools.bend as Tl
@@ -39,24 +33,19 @@ type Desk is Data:
   Away{}
   Left{}
   Says{yes: Bool}
-  Phone{}
-  PhoneLeft{}
 
 # How a question ended: the clients of session `at` (0: the asker, 1: its
-# parent, ...) answered, no one did, or the gateway rule of session `at`
-# answered
+# parent, ...) answered, or no one did
 type End is Data:
   Answered{at: Nat, yes: Bool}
   Unanswered{}
-  Ruled{at: Nat}
 
 # What becomes of the step (crates/eukhe-types `ShellAnswer`): it runs, a
-# client denied it, no one answered, or the gateway rule refused it
+# client denied it, or no one answered
 type Fate is Data:
   Runs{}
   Denied{}
   Unheard{}
-  GatewayRefused{}
 
 # The sessions that showed the question (a frame to their clients), in
 # order, and how it ended
@@ -73,7 +62,7 @@ def Out.shown(o: Out) -> List<&2, Nat>:
     case Out{s, e}:
       s
 
-# The clients of the session, or its gateway rule, answer
+# The clients of the session answer
 def Desk.says(d: Desk) -> Bool:
   match d:
     case Away{}:
@@ -82,12 +71,8 @@ def Desk.says(d: Desk) -> Bool:
       False{}
     case Says{y}:
       True{}
-    case Phone{}:
-      True{}
-    case PhoneLeft{}:
-      True{}
 
-# No session of the chain has clients (or a gateway rule) that answer
+# No session of the chain has clients that answer
 def quiet(ds: List<&2, Desk>) -> Bool:
   match ds:
     case Nil{}:
@@ -101,8 +86,6 @@ def End.up(e: End) -> End:
       Answered{1n+a, y}
     case Unanswered{}:
       Unanswered{}
-    case Ruled{a}:
-      Ruled{1n+a}
 
 def ups(xs: List<&2, Nat>) -> List<&2, Nat>:
   match xs:
@@ -136,26 +119,12 @@ def route(ds: List<&2, Desk>) -> Out:
           Out.first(Out.up(route(rest)))
         case Says{y}:
           Out{[0n], Answered{0n, y}}
-        case Phone{}:
-          Out{Nil{}, Ruled{0n}}
-        case PhoneLeft{}:
-          Out{[0n], Ruled{0n}}
 
-# The auto set of a session whose user sets none (`shell.autoEffects`):
-# every effect
+# The grant of a session whose user sets none (`shell.autoEffects`): the
+# reversible effects, read, write (inside the workspace) and exec
+# (spec/README.md I1)
 def default_auto() -> List<&2, Nat>:
-  [0n, 1n, 2n, 3n, 4n, 5n, 6n]
-
-def guard(g: Bool) -> Fate:
-  match g:
-    case True{}:
-      GatewayRefused{}
-    case False{}:
-      Runs{}
-
-# The gateway rule on a step with the effects es
-def rule(+es: List<&2, Nat>) -> Fate:
-  guard(Tl.elem(es, 5n))
+  [0n, 1n, 2n]
 
 def yes.fate(y: Bool) -> Fate:
   match y:
@@ -164,15 +133,14 @@ def yes.fate(y: Bool) -> Fate:
     case False{}:
       Denied{}
 
-# What becomes of a step with the effects es whose question ended so
+# What becomes of a step with the effects es whose question ended so: a
+# yes runs it; a no, or no answer, refuses it
 def fate(+es: List<&2, Nat>, e: End) -> Fate:
   match e:
     case Answered{a, y}:
       yes.fate(y)
     case Unanswered{}:
       Unheard{}
-    case Ruled{a}:
-      rule(es)
 
 # How a step goes: within the auto set it runs, and no one is asked; else
 # its question goes its route o, and the step fares f
@@ -200,8 +168,7 @@ def gate(+auto: List<&2, Nat>, +es: List<&2, Nat>, ds: List<&2, Desk>) -> Gated:
 # session now
 type Here is Data:
   Nobody{}       # no client is attached
-  GatewayOnly{}  # clients are attached, and all are the phone gateway
-  Clients{}      # an interactive client is attached
+  Clients{}      # a client is attached (the TUI, the dashboard, the phone gateway)
 
 # What the session does with the question
 type Next is Data:
@@ -223,8 +190,6 @@ def next(+es: List<&2, Nat>, h: Here, parent: Bool) -> Next:
   match h:
     case Nobody{}:
       next.alone(es, parent)
-    case GatewayOnly{}:
-      Ends{fate(es, Out.end(route([Phone{}])))}
     case Clients{}:
       Show{}
 
@@ -387,8 +352,6 @@ def detach.with(+n: Nat, +qs: List<&2, Q>, h: Here, +parent: Bool) -> D & List<&
       (D{n, qs}, Nil{})
     case Nobody{}:
       detach.put(n, reroute(qs, Nobody{}, parent))
-    case GatewayOnly{}:
-      detach.put(n, reroute(qs, GatewayOnly{}, parent))
 
 def cancel.with(+n: Nat, +qs: List<&2, Q>, r: QF) -> D & List<&2, Act>:
   match r:

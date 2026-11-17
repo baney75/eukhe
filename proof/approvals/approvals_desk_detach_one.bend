@@ -11,8 +11,6 @@ def dd.parent(+n: Nat, +k: Nat, +i: String, +es: List<&2, Nat>, h: Am.Here, +p: 
   match h:
     case Am.Nobody{}:
       {==}
-    case Am.GatewayOnly{}:
-      {==}
     case Am.Clients{}:
       {==}
 
@@ -25,4 +23,4 @@ def dd.nobody(+n: Nat, +k: Nat, +i: String, +es: List<&2, Nat>, p: Bool) -> {Am.
       {==}
 
 def ApprovalsDesk.approvals_desk_detach_one(n, k, i, es, h, p):
-  (dd.parent(n, k, i, es, h, p), {==}, dd.nobody(n, k, i, es, p), {==})
+  (dd.parent(n, k, i, es, h, p), {==}, dd.nobody(n, k, i, es, p))

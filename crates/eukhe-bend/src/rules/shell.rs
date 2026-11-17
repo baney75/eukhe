@@ -34,7 +34,7 @@ pub enum Gate {
 pub enum Said {
     /// The user approved the step.
     Yes,
-    /// A denial, no answer, or the gateway rule's refusal.
+    /// A denial, or no answer.
     No,
 }
 

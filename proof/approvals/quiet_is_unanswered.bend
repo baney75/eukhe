@@ -18,10 +18,6 @@ def pa.quiet_none(+ds: List<&2, Am.Desk>, quiet: {Am.quiet(ds) == True{} : Bool}
           LA.pa.end_first_up_is(Am.route(rest), Am.Unanswered{}, pa.quiet_none(rest, quiet))
         case Am.Says{y}:
           LLogicLogic.approvals.pa.absurdF({Am.Out.end(Am.route(Am.Says{y} <> rest)) == Am.Unanswered{} : Am.End}, quiet)
-        case Am.Phone{}:
-          LLogicLogic.approvals.pa.absurdF({Am.Out.end(Am.route(Am.Phone{} <> rest)) == Am.Unanswered{} : Am.End}, quiet)
-        case Am.PhoneLeft{}:
-          LLogicLogic.approvals.pa.absurdF({Am.Out.end(Am.route(Am.PhoneLeft{} <> rest)) == Am.Unanswered{} : Am.End}, quiet)
 
 def Approvals.quiet_is_unanswered(ds, quiet):
   pa.quiet_none(ds, quiet)

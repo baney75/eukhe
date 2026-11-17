@@ -227,10 +227,9 @@ pub type ProgressNoteSink = Arc<dyn Fn(&str, f64) + Send + Sync>;
 pub type JobSettledSink = Arc<dyn Fn(eukhe_types::job::JobSettled) + Send + Sync>;
 
 /// Asks the user whether one gated step of a `bash` tool script may run
-/// (G5): the daemon worker asks its attached clients and
-/// waits for the first answer, or answers by the gateway rule when its
-/// only clients are the phone gateway, or hands the question to its
-/// parent session when no client is attached.
+/// (G5): the daemon worker asks its attached clients (the phone gateway
+/// among them, which asks over Signal) and waits for the first answer, or
+/// hands the question to its parent session when no client is attached.
 pub type ShellApprovalSink = Arc<
     dyn Fn(
             eukhe_types::shell::ShellApprovalRequest,

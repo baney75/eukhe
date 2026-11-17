@@ -929,6 +929,7 @@ impl Tab {
             DaemonClientEvent::ShellApprovalSettled {
                 active_session_id,
                 request_id,
+                outcome: _,
             } => {
                 if binding.active_session_id() == Some(active_session_id.as_str()) {
                     self.send(&ServerFrame::ApprovalSettled {
@@ -1045,6 +1046,7 @@ mod tests {
         let settled = |active_session_id: &str| DaemonClientEvent::ShellApprovalSettled {
             active_session_id: active_session_id.to_string(),
             request_id: format!("r-{active_session_id}"),
+            outcome: None,
         };
         for news in [
             // Already in the snapshot the tab holds.

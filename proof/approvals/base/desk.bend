@@ -1,5 +1,5 @@
-# eukhe: lemmas the proofs of laws/approvals/desk.bend share: the model's
-# gateway rule and the clients' answer read through the laws' terms; the
+# eukhe: lemmas the proofs of laws/approvals/desk.bend share: membership
+# and the clients' answer read through the laws' terms; the
 # desk's searches (find: the oldest question its frame names, take: the
 # first with a key) and its rerouting of a detach, walked by induction on
 # the questions
@@ -60,8 +60,8 @@ def ad.nat_refl(x: Nat) -> {Nat.is_eq(x, x) == True{} : Bool}:
     case 1n+p:
       ad.nat_refl(p)
 
-# The gateway rule and the clients' answer
-# ----------------------------------------
+# Membership and the clients' answer
+# ----------------------------------
 
 # the model's membership is the spec's
 def ap.has(xs: List<&2, Nat>, +x: Nat) -> {Tl.elem(xs, x) == ApprovalsDesk.sp_has(xs, x) : Bool}:
