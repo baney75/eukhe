@@ -1,5 +1,5 @@
 //! The daemon-backed command runner behind the public commands `list`,
-//! `sessions`, `stop`, `rename`, `state`, `effects`, `send`, and
+//! `sessions`, `stop`, `rename`, `state`, `effects`, `approve`, `send`, and
 //! `schedule`: argument parsing, request shaping, and output rendering.
 //! Ported from
 //! `cli/daemon-command.ts` (the `handleDaemonCommand` surface reachable
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, bail, Context, Result};
 use eukhe_client::daemon_client::{
     is_connect_failure, is_daemon_timeout, is_foreign_daemon, DaemonClient, DaemonClientEvent,
-    DEFAULT_REQUEST_TIMEOUT_MS,
+    DEFAULT_REQUEST_TIMEOUT_MS, LONG_RUNNING_REQUEST_TIMEOUT_MS,
 };
 use eukhe_types::daemon::{
     DaemonCommand, DaemonProtocolInfo, DaemonResponse, StateRewindPlanReply, StateTreeEffect,
@@ -22,7 +22,8 @@ use eukhe_types::daemon::{
     DAEMON_PROTOCOL_VERSION,
 };
 use eukhe_types::effects::{
-    EffectResolution, ResolvedEffectReply, UnknownEffect, UnknownEffectsReply,
+    missing_line, ApproveWhich, ApprovedEffectsReply, EffectResolution, ResolvedEffectReply,
+    UnknownEffect, UnknownEffectsReply, WaitingEffect, WaitingEffectsReply, WaitingStatus,
 };
 use serde_json::{json, Value};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -113,6 +114,7 @@ fn run_daemon_command_parsed(command: &str, parsed: &ParsedDaemonCommand) -> Res
         "rename" => run_rename(&mut client, &parsed.positionals, parsed.json),
         "state" => run_state(&mut client, &parsed.positionals, parsed.json),
         "effects" => run_effects(&mut client, &parsed.positionals, parsed.json),
+        "approve" => run_approve(&mut client, &parsed.positionals, parsed.json),
         "send" => run_send(&mut client, &parsed.positionals, parsed.json),
         "cron" => run_cron(&mut client, &parsed.positionals, parsed.json),
         other => bail!("Unknown daemon command: {other}"),
@@ -147,12 +149,17 @@ impl Daemon {
     }
 
     fn request(&mut self, command: DaemonCommand) -> Result<DaemonResponse> {
-        self.runtime.block_on(request(
-            &self.client,
-            &mut self.events,
-            command,
-            DEFAULT_REQUEST_TIMEOUT_MS,
-        ))
+        self.request_within(command, DEFAULT_REQUEST_TIMEOUT_MS)
+    }
+
+    /// A request whose answer may take up to `timeout_ms`.
+    fn request_within(
+        &mut self,
+        command: DaemonCommand,
+        timeout_ms: u64,
+    ) -> Result<DaemonResponse> {
+        self.runtime
+            .block_on(request(&self.client, &mut self.events, command, timeout_ms))
     }
 }
 
@@ -972,6 +979,112 @@ fn effects_lines(effects: &[UnknownEffect]) -> Vec<String> {
 }
 
 // ---------------------------------------------------------------------------
+// approve
+// ---------------------------------------------------------------------------
+
+/// Whether an `approve` operand names a waiting effect (`all`, `w<N>`)
+/// rather than an agent.
+fn names_waiting(operand: &str) -> bool {
+    operand == "all"
+        || operand
+            .strip_prefix('w')
+            .is_some_and(|number| !number.is_empty() && number.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// Parse the `approve` operands (the options are gone already): an
+/// optional agent, then `all` or ids (none: all).
+fn parse_approve_args(args: &[String]) -> Result<(Option<&str>, ApproveWhich)> {
+    let (selector, words) = match args.split_first() {
+        Some((first, rest)) if !names_waiting(first) => (Some(first.as_str()), rest),
+        Some(_) | None => (None, args),
+    };
+    if let Some(word) = words.iter().find(|word| !names_waiting(word)) {
+        return Err(usage_error(format!(
+            "Unknown approve operand: {word} (all or an id like w3).\n\nUsage: eukhe approve [<agent>] [all|<id>...]"
+        )));
+    }
+    Ok((selector, ApproveWhich::from_words(words)))
+}
+
+/// `approve [<agent>] [all|<id>...]`: run the agent's waiting
+/// irreversible effects (all, or the ids named), each once, in order, as
+/// the user's own act; print how each ended and why a named id ran
+/// nothing.
+fn run_approve(client: &mut Daemon, args: &[String], json: bool) -> Result<()> {
+    let (selector, which) = parse_approve_args(args)?;
+    let active_session_id = match selector {
+        Some(selector) => resolve_live_session_selector(client, selector)?,
+        None => only_live_session(client)?,
+    };
+    let data = require_success(client.request_within(
+        DaemonCommand::ApproveWaitingEffects {
+            id: None,
+            active_session_id: active_session_id.clone(),
+            which,
+            rest: serde_json::Map::new(),
+        },
+        LONG_RUNNING_REQUEST_TIMEOUT_MS,
+    )?)?
+    .unwrap_or(Value::Null);
+    if json {
+        return print_json(&data);
+    }
+    let reply: ApprovedEffectsReply =
+        serde_json::from_value(data).context("malformed approved effects")?;
+    // Why a named id ran nothing reads in the ledger as it is now.
+    let ledger = if reply.missing.is_empty() {
+        Vec::new()
+    } else {
+        let data = require_success(client.request(DaemonCommand::GetWaitingEffects {
+            id: None,
+            active_session_id,
+            rest: serde_json::Map::new(),
+        })?)?
+        .unwrap_or(Value::Null);
+        serde_json::from_value::<WaitingEffectsReply>(data)
+            .context("malformed waiting effects")?
+            .effects
+    };
+    println!("{}", approve_lines(&reply, &ledger).join("\n"));
+    Ok(())
+}
+
+/// What `eukhe approve` prints: how each approved effect ended (its
+/// outcome summary under it), then why each named id ran nothing.
+fn approve_lines(reply: &ApprovedEffectsReply, ledger: &[WaitingEffect]) -> Vec<String> {
+    let mut lines: Vec<String> = reply
+        .ran
+        .iter()
+        .map(|effect| {
+            let (outcome, summary) = match &effect.status {
+                WaitingStatus::Ran { ok: true, summary } => ("ran", summary.as_str()),
+                WaitingStatus::Ran { ok: false, summary } => ("failed", summary.as_str()),
+                WaitingStatus::Waiting | WaitingStatus::Running | WaitingStatus::Refused => {
+                    ("did not run", "")
+                }
+            };
+            let head =
+                crate::sanitize::line(&format!("{} {outcome}: {}", effect.id, effect.command));
+            if summary.is_empty() {
+                head
+            } else {
+                format!("{head}\n{}", crate::sanitize::text(summary))
+            }
+        })
+        .collect();
+    lines.extend(
+        reply
+            .missing
+            .iter()
+            .map(|id| crate::sanitize::line(&missing_line(ledger, id))),
+    );
+    if lines.is_empty() {
+        lines.push("Nothing waits for approval.".to_owned());
+    }
+    lines
+}
+
+// ---------------------------------------------------------------------------
 // send
 // ---------------------------------------------------------------------------
 
@@ -1452,6 +1565,90 @@ mod tests {
         assert_eq!(
             effects_lines(&[effect]),
             ["tool:c1 tool unknown bash: make deploy"]
+        );
+    }
+
+    /// `approve` takes an optional agent, then `all` or `w<N>` ids (none:
+    /// all); any other operand after the agent is a usage error.
+    #[test]
+    fn approve_args_parse() {
+        let ids = |list: &[&str]| ApproveWhich::Ids(args(list));
+        for (operands, selector, which) in [
+            (vec![], None, ApproveWhich::All),
+            (vec!["all"], None, ApproveWhich::All),
+            (vec!["w3", "w12"], None, ids(&["w3", "w12"])),
+            (vec!["worker"], Some("worker"), ApproveWhich::All),
+            (vec!["worker", "w3"], Some("worker"), ids(&["w3"])),
+            (vec!["worker", "all"], Some("worker"), ApproveWhich::All),
+        ] {
+            let operands = args(&operands);
+            assert_eq!(parse_approve_args(&operands).unwrap(), (selector, which));
+        }
+        for operands in [
+            vec!["worker", "deploy"],
+            vec!["w3", "worker"],
+            vec!["worker", "w"],
+        ] {
+            let bad = operands.last().copied().unwrap_or_default();
+            let operands = args(&operands);
+            assert_eq!(
+                parse_approve_args(&operands).unwrap_err().to_string(),
+                format!(
+                    "Unknown approve operand: {bad} (all or an id like w3).\n\nUsage: eukhe approve [<agent>] [all|<id>...]"
+                )
+            );
+        }
+    }
+
+    /// Each approved effect shows how it ended, its summary under it;
+    /// each named id that ran nothing says why; nothing at all says so.
+    #[test]
+    fn approve_lines_show_outcomes_and_misses() {
+        let effect = |id: &str, command: &str, status| WaitingEffect {
+            id: id.to_owned(),
+            kind: eukhe_types::effects::WaitingKind::ShellStep,
+            command: command.to_owned(),
+            cwd: "/work".to_owned(),
+            effects: vec![eukhe_types::shell::ShellEffect::Net],
+            agent: None,
+            session_id: "s1".to_owned(),
+            asked_at_ms: 0,
+            status,
+            payload: Value::Null,
+        };
+        let empty = ApprovedEffectsReply {
+            ran: Vec::new(),
+            missing: Vec::new(),
+        };
+        assert_eq!(approve_lines(&empty, &[]), ["Nothing waits for approval."]);
+        let pushed = effect(
+            "w1",
+            "git push origin main",
+            WaitingStatus::Ran {
+                ok: true,
+                summary: "exit 0".to_owned(),
+            },
+        );
+        let failed = effect(
+            "w2",
+            "npm publish",
+            WaitingStatus::Ran {
+                ok: false,
+                summary: "exit 1\nE403".to_owned(),
+            },
+        );
+        let reply = ApprovedEffectsReply {
+            ran: vec![pushed.clone(), failed],
+            missing: args(&["w1", "w9"]),
+        };
+        assert_eq!(
+            approve_lines(&reply, &[pushed]),
+            [
+                "w1 ran: git push origin main\nexit 0",
+                "w2 failed: npm publish\nexit 1\nE403",
+                "w1 already ran",
+                "no waiting effect w9",
+            ]
         );
     }
 

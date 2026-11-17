@@ -223,6 +223,7 @@ pub fn handle_public_command(args: &[String]) -> PublicCommandResult {
         }
         "state" => run_internal_agent_command("state", &rest),
         "effects" => run_internal_agent_command("effects", &rest),
+        "approve" => run_internal_agent_command("approve", &rest),
         "send" => run_internal_agent_command("send", &rest),
         "schedule" => run_nested_agent_command("schedule", "cron", &rest),
         "status" => run_status(&rest),
@@ -897,5 +898,22 @@ mod incident_dispatch_tests {
             ),
             "{resolve}"
         );
+    }
+
+    /// `approve` is a public command whose help gives its usage, what it
+    /// runs, and its examples.
+    #[test]
+    fn the_approve_help_says_what_runs() {
+        assert!(public_command_names().contains(&"approve"));
+        let help = format_command_help(&["approve"]).expect("the approve spec");
+        assert!(
+            help.starts_with("Usage:\n  eukhe approve [<agent>] [all|<id>...] [--json]"),
+            "{help}"
+        );
+        assert!(
+            help.contains("Each approved effect runs once, in order, as your own act"),
+            "{help}"
+        );
+        assert!(help.contains("approve worker w3 w5"), "{help}");
     }
 }

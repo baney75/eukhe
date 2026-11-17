@@ -519,6 +519,7 @@ async fn run_prompts(
         events.finish().await;
     }
     let exit = run_exit(opened, &conversation, watch, ended?, options, cx).await?;
+    print_waiting(harness, session.root(), json_mode, cx).await?;
     let exit = task_exit(opened, &conversation, exit, since, json_mode, cx).await?;
     // "Done" is a claim: with acceptance checks the run exits 0 only when
     // each is confirmed on the final state (`laws/verify.bend`); the label
@@ -529,6 +530,34 @@ async fn run_prompts(
     }
     let code = acceptance_exit_code(harness, conversation.id(), u64::from(exit.code), cx).await?;
     Ok(i32::try_from(code).unwrap_or(1))
+}
+
+/// The run's end message when irreversible effects wait for the user's
+/// approval (the waiting list of the ledger of `root`, the session's root
+/// conversation): the one text on stderr in both modes and, in json mode,
+/// a `waiting_effects` event with the waiting effects on stdout. Nothing
+/// waits: nothing printed.
+async fn print_waiting(
+    harness: &eukhe_durable::harness::Harness,
+    root: &Conversation,
+    json_mode: bool,
+    cx: &Context,
+) -> Result<(), HeadlessModeError> {
+    let ledger = eukhe_durable::harness::effects::read_waiting_effects(harness, root.id(), cx)
+        .await
+        .map_err(HeadlessModeError::Durable)?;
+    let Some(summary) = eukhe_types::effects::waiting_summary(&ledger) else {
+        return Ok(());
+    };
+    eprintln!("{}", crate::sanitize::text(&summary));
+    if json_mode {
+        let waiting: Vec<_> = ledger.iter().filter(|effect| effect.is_waiting()).collect();
+        println!(
+            "{}",
+            serde_json::json!({ "type": "waiting_effects", "effects": waiting })
+        );
+    }
+    Ok(())
 }
 
 /// The exit of a run whose prompt loop ended as `ended`: gather the facts

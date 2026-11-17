@@ -46,6 +46,16 @@
 //!   outcome a restart could not tell, [`resolve_unknown_effect`] settles
 //!   one after the host checked the world, and [`watch_unknown_effects`]
 //!   follows the ledger (its current state first, then every change).
+//! - [`waiting_effects`] lists the session's irreversible effects that
+//!   wait for the user's approval (a push, a publish, a write outside the
+//!   workspace, an MCP tool not declared read-only: they do not run during
+//!   the run), [`waiting_summary`] is the one end-of-run text,
+//!   [`approve_waiting`] runs the chosen ones, each once, in order, as the
+//!   user's own act (the model reads each result next turn),
+//!   [`watch_waiting_effects`] follows them, and [`set_approval_mode`]
+//!   chooses when an irreversible effect is asked about
+//!   ([`ApprovalMode::End`]: never during the run; [`ApprovalMode::Watch`]:
+//!   asked mid-run, through the session's `shell_approval` channel).
 //! - [`available_models`] lists the chat models whose providers have
 //!   credentials.
 //! - [`set_budget`] sets the [`budget`] limits of the session's runs (a
@@ -90,13 +100,14 @@ pub use eukhe_chord::context;
 pub use eukhe_core::durable::acceptance::{
     acceptance_state, set_acceptance, watch_acceptance_updates, AcceptanceUpdates,
 };
+pub use eukhe_core::durable::approve::ApproveError;
 pub use eukhe_core::durable::budget::{BudgetError, BudgetGate, RunError, RunStart};
 pub use eukhe_core::durable::{
     create_models, EukheSession, ModelRequest, OpenError, SessionConfig, SessionModels,
     SessionStorage,
 };
 pub use eukhe_durable::harness::effects::{
-    EffectKind, EffectResolution, UnknownEffect, UnknownEffectUpdates,
+    EffectKind, EffectResolution, UnknownEffect, UnknownEffectUpdates, WaitingEffectUpdates,
 };
 pub use eukhe_durable::harness::{
     AgentEvent, AgentEventBatch, AgentEventStream, Conversation, SnapshotEvent,
@@ -106,6 +117,10 @@ pub use eukhe_types::acceptance::{
 };
 pub use eukhe_types::budget;
 pub use eukhe_types::daemon::BudgetAudit;
+pub use eukhe_types::effects::{
+    waiting_summary, ApprovalMode, ApproveWhich, ApprovedEffectsReply, WaitingEffect, WaitingKind,
+    WaitingStatus,
+};
 pub use eukhe_types::pi_ai::Model;
 
 use budget::{BudgetAmounts, BudgetReport, PlanNotice, RunKind, RunLimits};
@@ -274,6 +289,97 @@ pub fn watch_unknown_effects(
         conversation.id(),
         cx,
     )?)
+}
+
+/// The ledger of `session`'s irreversible effects that wait for the
+/// user's approval (its root conversation's: a subagent's are recorded
+/// there too), by id, every status: waiting, running, ran, refused.
+///
+/// # Errors
+///
+/// The ledger cannot be read (the session closed, `cx` cancelled).
+pub async fn waiting_effects(
+    session: &EukheSession,
+    cx: &Context,
+) -> anyhow::Result<Vec<WaitingEffect>> {
+    Ok(eukhe_durable::harness::effects::read_waiting_effects(
+        session.harness(),
+        session.root().id(),
+        cx,
+    )
+    .await?)
+}
+
+/// Run the waiting effects of `session` that `which` names, each once, in
+/// ledger order, as the user's own act; each result is a row of the main
+/// conversation the model reads next turn. Allowed while a run goes on;
+/// approvals of one session run one at a time. The reply names the
+/// effects as they ended and the named ids that ran nothing
+/// ([`eukhe_types::effects::missing_line`] says why).
+///
+/// # Errors
+///
+/// The session closed, or the ledger cannot be read or written.
+pub async fn approve_waiting(
+    session: &EukheSession,
+    which: &ApproveWhich,
+    cx: &Context,
+) -> Result<ApprovedEffectsReply, ApproveError> {
+    Box::pin(eukhe_core::durable::approve::approve_waiting(
+        session.deps(),
+        &session.main(),
+        which,
+        cx,
+    ))
+    .await
+}
+
+/// Follow `session`'s waiting effects: the ledger first, then the ledger
+/// after every change (an effect recorded, run, refused). Dropping the
+/// stream stops it.
+///
+/// # Errors
+///
+/// The session's harness cannot attach the watch (closed).
+pub fn watch_waiting_effects(
+    session: &EukheSession,
+    cx: &Context,
+) -> anyhow::Result<WaitingEffectUpdates> {
+    Ok(eukhe_durable::harness::effects::watch_waiting_effects(
+        session.harness(),
+        session.root().id(),
+        cx,
+    )?)
+}
+
+/// Set when `session` asks about an irreversible effect (its own
+/// `approvals.mode`, never saved): [`ApprovalMode::End`] records it
+/// waiting, unasked; [`ApprovalMode::Watch`] asks through the session's
+/// `shell_approval` channel, and no answer records it waiting.
+///
+/// # Errors
+///
+/// The session's agent state cannot be written.
+pub async fn set_approval_mode(
+    session: &EukheSession,
+    mode: ApprovalMode,
+    cx: &Context,
+) -> anyhow::Result<()> {
+    let line = eukhe_types::cvar::Command::Set {
+        id: eukhe_core::settings::cvar::table::APPROVALS_MODE
+            .id
+            .to_owned(),
+        value: mode.as_str().to_owned(),
+    }
+    .to_string();
+    eukhe_core::durable::cvar_agent::run_cvar_line(
+        session,
+        &line,
+        eukhe_core::durable::cvar_agent::CvarLineScope::Session,
+        cx,
+    )
+    .await?;
+    Ok(())
 }
 
 /// Which runs of a session [`set_budget`] limits.

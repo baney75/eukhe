@@ -144,6 +144,20 @@ kind, its state (unknown, ran, not-run), and what it is. Without <agent>, the on
     .options(&["--json  Print JSON"])
     .examples(&["effects resolve tool:call_1 not-run worker"]),
     CommandSpec::new(
+        &["approve"],
+        "approve [<agent>] [all|<id>...] [--json]",
+        "Run the irreversible effects that wait for your approval",
+    )
+    .description(
+        "An irreversible effect (a push, a publish, a deploy, a write outside the workspace, an \
+MCP tool not declared read-only) does not run during the run: it waits, with an id like w3, \
+until you approve it. Each approved effect runs once, in order, as your own act, and the agent \
+reads its result on its next turn. Without ids, every waiting effect runs; an id that already ran \
+or never waited runs nothing. Without <agent>, the only active agent.",
+    )
+    .options(&["--json  Print JSON"])
+    .examples(&["approve", "approve worker w3 w5"]),
+    CommandSpec::new(
         &["send"],
         "send [--from <agent>] <agent> <message>",
         "Send a message to an agent",
