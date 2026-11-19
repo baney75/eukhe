@@ -606,6 +606,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn update_document_refuses_an_unreadable_or_invalid_document() {
         use std::os::unix::fs::PermissionsExt;

@@ -226,21 +226,21 @@ impl<'a> SshRead<'a> {
             url: url(),
             detail: error.to_string(),
         };
-        let mut child = Command::new(self.program)
+        let mut command = Command::new(self.program);
+        command
             .args(self.arguments())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .process_group(0)
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::NotFound {
-                    SshError::NoSsh { url: url() }
-                } else {
-                    run_error(error)
-                }
-            })?;
+            .kill_on_drop(true);
+        crate::platform::set_new_process_group(command.as_std_mut());
+        let mut child = command.spawn().map_err(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                SshError::NoSsh { url: url() }
+            } else {
+                run_error(error)
+            }
+        })?;
         let (Some(stdout), Some(stderr)) = (child.stdout.take(), child.stderr.take()) else {
             return Err(run_error(std::io::Error::other("ssh has no output pipes")));
         };

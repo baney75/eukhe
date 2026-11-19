@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 use eukhe_durable::harness::types::{SubmissionDraft, WriteSubmissionDraft};
 use eukhe_durable::types::ConversationId;
+use eukhe_types::platform::mode::CreationMode as _;
 use serde_json::{json, Value};
 
 use super::super::{HostCall, HostDeps};
@@ -405,7 +406,7 @@ async fn dispose(conversation_id: ConversationId, kernel: &ConversationKernel) {
 async fn relocate_snapshot(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
     tokio::fs::DirBuilder::new()
         .recursive(true)
-        .mode(eukhe_types::platform::access::PRIVATE_DIR_MODE)
+        .creation_mode(eukhe_types::platform::access::PRIVATE_DIR_MODE)
         .create(to)
         .await?;
     for (source, target) in [

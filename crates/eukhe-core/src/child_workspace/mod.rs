@@ -609,7 +609,7 @@ fn finish(root: &Path, parent: &Path) -> io::Result<()> {
     match fs::symlink_metadata(&tree) {
         Ok(_) => Ok(()),
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            std::os::unix::fs::symlink(parent, &tree)
+            crate::platform::fs::symlink(parent, &tree)
         }
         Err(error) => Err(error),
     }

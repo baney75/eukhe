@@ -307,17 +307,18 @@ async fn run(
     report: &(dyn Fn(CheckReport) + Sync),
 ) -> (CheckOutcome, String) {
     let trust = super::tool_env(dir);
-    let spawned = Command::new("sh")
+    let mut shell = Command::new("sh");
+    shell
         .arg("-c")
         .arg(format!("exec 2>&1\n{command}"))
         .current_dir(dir)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .process_group(0)
         .kill_on_drop(true)
-        .envs(trust)
-        .spawn();
+        .envs(trust);
+    crate::platform::set_new_process_group(shell.as_std_mut());
+    let spawned = shell.spawn();
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {
