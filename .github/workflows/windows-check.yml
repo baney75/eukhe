@@ -1,0 +1,65 @@
+# The Windows port's check: eukhe-bend, eukhe-types and eukhe-client build
+# and pass their tests on Windows (MSVC target, LLVM clang for the Bend
+# core), and still do on Linux and macOS.
+name: windows-check
+
+on:
+  push:
+    branches: [windows/ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # The checkout keeps the repository's LF endings (a Windows runner
+      # converts to CRLF by default; tests compare files byte for byte).
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+
+      # eukhe-bend compiles its C with clang (musttail, preserve_none: 19+).
+      - name: LLVM clang on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$llvm\clang.exe")) { choco install llvm -y --no-progress }
+          Add-Content -Path $env:GITHUB_PATH -Value $llvm
+      - name: clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v clang >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y clang
+          fi
+      - name: clang version
+        run: clang --version
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+          rustc --version --verbose
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        shell: bash
+        run: cargo build --locked -p eukhe-bend -p eukhe-types -p eukhe-client --all-targets
+
+      - name: Test
+        shell: bash
+        run: cargo test --locked -p eukhe-bend -p eukhe-types -p eukhe-client
