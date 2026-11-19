@@ -33,7 +33,7 @@ fn assert_the_next_start_reclaims_the_socket(
         .expect("the exit leaves its socket file")
         .ino();
     assert!(
-        UnixStream::connect(socket).is_err(),
+        StdStream::connect(socket).is_err(),
         "nothing serves the left-behind socket file"
     );
     let _successor = spawn_daemon(socket, agent_dir);
