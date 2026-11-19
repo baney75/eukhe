@@ -31,6 +31,8 @@
 //! straight back to a fresh bind, which the dev+ino gate cannot see, so
 //! keeping the original inode allocated guarantees the identities differ
 //! and the oracle is never vacuous on inode reuse.
+// Unix sockets and listeners stand in for its peers: Unix only.
+#![cfg(unix)]
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
@@ -49,8 +51,10 @@ use process::{wait_socket_file, Daemon};
 // The replaced-file oracles (off Linux): a Linux endpoint is an abstract
 // name, which binds once while its owner listens; no file to replace.
 #[cfg(not(target_os = "linux"))]
+#[cfg(unix)]
 use daemon::supervisor_command;
 #[cfg(not(target_os = "linux"))]
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 #[cfg(not(target_os = "linux"))]
 use std::os::unix::net::UnixListener;

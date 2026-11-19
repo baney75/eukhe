@@ -5,6 +5,8 @@
 //! applies without a restart, and the compactor's background slots (the
 //! supervisor's own, or a worker's over its link) give way to workers'
 //! requests.
+// The workers connect over Unix sockets (UnixListener): Unix only.
+#![cfg(unix)]
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};

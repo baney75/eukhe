@@ -169,6 +169,7 @@ fn latest_record(dir: &Path, journal: &str) -> WorkerRecoveryRecord {
 
 /// Poll the journal until its latest record is `operation`: the event
 /// bridge journals a run's start and end on its own task.
+#[cfg(unix)]
 async fn wait_record(dir: &Path, journal: &str, operation: &str) -> WorkerRecoveryRecord {
     let deadline = Instant::now() + DEADLINE;
     loop {
@@ -549,6 +550,7 @@ async fn an_input_pause_lease_holds_admissions_until_released() {
 /// generation is in flight) is replaced by a fresh worker whose `create`
 /// reopens the storage: the run resumes to completion, and the journal's
 /// busy verdict goes `create` (busy) -> `run_ended` (idle).
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_crashed_run_resumes_on_the_next_create() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -617,6 +619,7 @@ async fn a_crashed_run_resumes_on_the_next_create() {
 /// mirror (which never hears a run end). The worker retires with a typed
 /// failure in its journal, and a revived worker reopens the storage,
 /// resumes the run, and drains the steer queued before the failure.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_failed_harness_retires_the_worker_and_the_revival_drains_the_steer() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -698,7 +701,9 @@ async fn a_failed_harness_retires_the_worker_and_the_revival_drains_the_steer() 
 }
 
 /// Make `dir`'s tree unwritable (or writable again).
+#[cfg(unix)]
 fn set_writable(dir: &Path, writable: bool) {
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     let (dir_mode, file_mode) = if writable {
         (0o755, 0o644)

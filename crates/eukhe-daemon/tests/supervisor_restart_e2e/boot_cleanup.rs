@@ -1,3 +1,6 @@
+// The journals are made unreadable through Unix modes: Unix only.
+#![cfg(unix)]
+
 use super::*;
 
 use std::os::unix::fs::PermissionsExt;

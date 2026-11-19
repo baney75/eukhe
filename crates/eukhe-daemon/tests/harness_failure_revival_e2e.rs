@@ -4,6 +4,8 @@
 //! typed failure, exits, and the supervisor revives the session from
 //! Storage, where the run resumes and the steer queued before the failure
 //! is delivered and answered.
+// The harness denies writes through Unix modes: Unix only.
+#![cfg(unix)]
 #![allow(clippy::too_many_lines)]
 
 use std::io::{BufRead, BufReader, Write};

@@ -417,8 +417,10 @@ fn display_entries_round_trip_and_tombstones_stick() {
     assert!(!write_rlm_subagent_display(&entry).unwrap());
 }
 
+#[cfg(unix)]
 #[test]
 fn display_entry_file_is_owner_only() {
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
 
     let dir = temp_dir("display-mode");

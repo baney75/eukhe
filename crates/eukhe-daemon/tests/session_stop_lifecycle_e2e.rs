@@ -18,6 +18,8 @@
 //! stop) must come back — the wake model survives crashes — while A must
 //! stay dead: no resurrection, no continuation, its jobs cancelled on
 //! disk, its file archived.
+// Unix sockets and listeners stand in for its peers: Unix only.
+#![cfg(unix)]
 // Pedantic-gate dispositions (fleet-uniform ruling; see this lane's PR for
 // the full rationale).
 // Stack-resident futures by design on the daemon's hot paths; boxing the

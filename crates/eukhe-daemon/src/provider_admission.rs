@@ -173,7 +173,7 @@ impl SupervisorAdmission {
     }
 
     /// The counters of `provider_id`.
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn snapshot(&self, provider_id: &str) -> eukhe_core::admission::AdmissionSnapshot {
         self.registry.controller(provider_id).snapshot()
     }

@@ -3,6 +3,8 @@
 //! socket-dir check and the session cwd check read from the filesystem,
 //! and the modes the real creation paths give every dir and file under a
 //! fresh home.
+// The checks read Unix owners and modes: Unix only.
+#![cfg(unix)]
 
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};

@@ -151,11 +151,17 @@ impl Supervisor {
 mod tests {
     use std::sync::{Arc, Mutex, PoisonError};
 
-    use eukhe_types::daemon::{DaemonErrorInfo, DaemonResponse, DaemonWorkerDescriptor};
+    use eukhe_types::daemon::DaemonWorkerDescriptor;
+    #[cfg(unix)]
+    use eukhe_types::daemon::{DaemonErrorInfo, DaemonResponse};
+    #[cfg(unix)]
     use eukhe_types::platform::transport::TransportStream;
+    #[cfg(unix)]
     use tokio::io::{AsyncBufReadExt as _, AsyncWriteExt as _, BufReader};
 
-    use super::{IdleShutdown, Ordering, Supervisor};
+    #[cfg(unix)]
+    use super::Ordering;
+    use super::{IdleShutdown, Supervisor};
     use crate::registry::{ResidentWorker, WorkerReply, WorkerRequest};
     use crate::supervisor::SupervisorOptions;
     use crate::work_gate::{QuiesceAnswer, Work, WorkGate};
@@ -236,6 +242,7 @@ mod tests {
 
     /// Send `shutdown { ifIdle: true }` through a real client connection
     /// (`handle_client`) and answer the response.
+    #[cfg(unix)]
     async fn idle_shutdown_over_the_wire(supervisor: &Arc<Supervisor>) -> DaemonResponse {
         let (server_side, client_side) = tokio::net::UnixStream::pair().expect("socket pair");
         {
@@ -271,6 +278,7 @@ mod tests {
     /// `list` and its shutdown) is never aborted. The supervisor itself
     /// asks the worker, the worker answers busy, nothing stops, and the
     /// worker's gate is released.
+    #[cfg(unix)]
     #[tokio::test]
     async fn an_idle_shutdown_never_stops_a_run_that_started_after_the_client_looked() {
         let dir = tempfile::TempDir::new().expect("temp dir");
