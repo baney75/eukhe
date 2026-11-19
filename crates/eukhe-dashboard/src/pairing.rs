@@ -18,9 +18,10 @@
 //! reads frames and the file, compares tokens and does what the core
 //! answers.
 
+use eukhe_types::platform::access::PRIVATE_FILE_MODE;
+use eukhe_types::platform::mode::{mode_of, set_mode, CreationMode as _};
 use std::fmt;
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use anyhow::Context;
@@ -92,10 +93,13 @@ pub enum Rotation {
 pub fn pairing_token(path: &Path, rotation: Rotation) -> anyhow::Result<PairingToken> {
     let disk = Disk::of(path, std::fs::read_to_string(path));
     let mode = match &disk {
-        Disk::Text(_) => std::fs::metadata(path)
-            .with_context(|| format!("read the mode of {}", path.display()))?
-            .permissions()
-            .mode(),
+        // Windows: no mode bits; the file is private through the ACL its
+        // folder under the user's profile passes down.
+        Disk::Text(_) => mode_of(
+            &std::fs::metadata(path)
+                .with_context(|| format!("read the mode of {}", path.display()))?,
+        )
+        .unwrap_or(PRIVATE_FILE_MODE),
         Disk::Missing | Disk::Unreadable(_) => 0,
     };
     let mut writer = Writer::new();
@@ -111,7 +115,7 @@ pub fn pairing_token(path: &Path, rotation: Rotation) -> anyhow::Result<PairingT
         (1 | 2, disk) => {
             let token = stored(&disk).unwrap_or_else(|| inconsistent("a stored token"));
             if keep == 2 {
-                std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                set_mode(path, PRIVATE_FILE_MODE)
                     .with_context(|| format!("make {} private", path.display()))?;
             }
             Ok(token)
@@ -154,7 +158,7 @@ pub(crate) fn write_private(path: &Path, contents: &[u8]) -> anyhow::Result<()> 
     let written = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
-        .mode(0o600)
+        .creation_mode(PRIVATE_FILE_MODE)
         .open(&staging)
         .and_then(|mut file| {
             file.write_all(contents)?;
@@ -402,7 +406,10 @@ impl Gate {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt as _;
 
+    #[cfg(unix)]
     #[test]
     fn the_opener_page_is_private_and_redirects() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -420,6 +427,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_token_is_kept_private_until_rotated() {
         let dir = tempfile::tempdir().expect("tempdir");
