@@ -421,6 +421,15 @@ impl Drop for BindLock {
     }
 }
 
+/// Whether nothing listens at `path` for certain: an endpoint file there
+/// names a pipe eukhe made, and no instance of that pipe exists (the
+/// first-instance create that [`endpoint_listens`] tries succeeds). A
+/// path with no endpoint file is not claimed closed.
+#[must_use]
+pub fn listener_definitely_closed(path: &Path) -> bool {
+    is_endpoint_file(path) && !endpoint_listens(path)
+}
+
 /// Whether the endpoint file at `path` names a pipe a listener serves: a
 /// first instance of its name is refused (access denied) while any
 /// instance exists. The probe opens no connection, so the listener's
