@@ -3,11 +3,16 @@
 //! `socket_dir_owned`). Daemon sockets and the chat lock endpoints bind
 //! only in a dir that passes it.
 
+#[cfg(unix)]
 use std::os::unix::fs::{DirBuilderExt, MetadataExt};
 use std::path::Path;
 
-use anyhow::{anyhow, Context as _, Result};
+#[cfg(unix)]
+use anyhow::anyhow;
+use anyhow::{Context as _, Result};
+#[cfg(unix)]
 use eukhe_bend::rules::fsmode::{self, DirVerdict, Node, Why};
+#[cfg(unix)]
 use eukhe_types::platform::access::current_uid;
 
 /// What [`prepare_socket_dir`] did with a safe socket dir.
@@ -34,6 +39,7 @@ pub enum SocketDir {
 ///
 /// Returns an error that names the dir, what was found and what to do
 /// when the dir is not safe, or when it cannot be inspected or created.
+#[cfg(unix)]
 pub fn prepare_socket_dir(dir: &Path) -> Result<SocketDir> {
     let found = match std::fs::symlink_metadata(dir) {
         Ok(found) => Some(found),
@@ -67,7 +73,52 @@ pub fn prepare_socket_dir(dir: &Path) -> Result<SocketDir> {
     }
 }
 
+/// Make `dir` ready to hold the files that name pipes, on Windows. A
+/// missing dir (and its missing parents) is created; an existing dir, and
+/// the dir after a create, must be a real directory, not a symbolic link
+/// or junction. Windows has no uid or mode bits to check: the dir takes the
+/// ACL of its parent (under the user's profile, the owner's alone), and a
+/// pipe is reached by its name, not through the dir, so a file another
+/// user put there cannot redirect a client to their pipe unless they can
+/// write the user's profile.
+///
+/// # Errors
+///
+/// Returns an error that names the dir and what was found when it is not
+/// a real directory, or when it cannot be inspected or created.
+#[cfg(windows)]
+pub fn prepare_socket_dir(dir: &Path) -> Result<SocketDir> {
+    let outcome = match std::fs::symlink_metadata(dir) {
+        Ok(_) => SocketDir::Used,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("create the socket dir {}", dir.display()))?;
+            SocketDir::Created
+        }
+        Err(error) => {
+            return Err(error).with_context(|| format!("inspect the socket dir {}", dir.display()))
+        }
+    };
+    let found = std::fs::symlink_metadata(dir)
+        .with_context(|| format!("inspect the socket dir {}", dir.display()))?;
+    let file_type = found.file_type();
+    let problem = if file_type.is_symlink() {
+        "is a symbolic link or junction"
+    } else if file_type.is_dir() {
+        return Ok(outcome);
+    } else {
+        "is not a directory"
+    };
+    Err(anyhow::anyhow!(
+        "the socket dir {} {problem}. eukhe names its pipes only from a real \
+         directory. Remove that path, or pass --daemon-socket with a path in a \
+         private directory.",
+        dir.display()
+    ))
+}
+
 /// The core's verdict on what `symlink_metadata` found (`None`: nothing).
+#[cfg(unix)]
 fn verdict(found: Option<&std::fs::Metadata>) -> DirVerdict {
     let own_uid = current_uid();
     match found {
@@ -87,6 +138,7 @@ fn verdict(found: Option<&std::fs::Metadata>) -> DirVerdict {
 }
 
 /// The error of a refused socket dir: what was found and what to do.
+#[cfg(unix)]
 fn refused(dir: &Path, why: Why, found: Option<&std::fs::Metadata>) -> anyhow::Error {
     let own_uid = current_uid();
     let problem = match why {

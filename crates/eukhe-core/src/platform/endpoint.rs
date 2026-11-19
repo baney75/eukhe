@@ -48,7 +48,7 @@ pub async fn bind_endpoint(path: &Path) -> Result<Box<dyn TransportListener>> {
     remove_if_present(&endpoint)?;
     let listener = bind_transport(&endpoint, eukhe_bend::rules::fsmode::peer_verdict).await?;
     restrict(&endpoint)?;
-    if let Err(error) = std::os::unix::fs::symlink(&endpoint, path) {
+    if let Err(error) = link(&endpoint, path) {
         drop(listener);
         remove_if_present(&endpoint)?;
         return Err(anyhow::Error::from(error).context(format!(
@@ -83,10 +83,7 @@ pub fn short_endpoint(path: &Path) -> Result<PathBuf> {
             let _ = write!(name, "{byte:02x}");
             name
         });
-    let fallback = Path::new("/tmp").join(format!(
-        "eukhe-{}",
-        eukhe_types::platform::access::current_uid()
-    ));
+    let fallback = fallback_dir();
     let base = [eukhe_types::platform::daemon_socket::socket_dir(), fallback]
         .into_iter()
         .find(|base| is_addressable(&base.join(SHORT_DIR).join(&name)))
@@ -120,6 +117,43 @@ fn restrict(path: &Path) -> Result<()> {
             .map_err(|error| anyhow!("set mode 0600 on the socket {}: {error}", path.display()))?;
     }
     Ok(())
+}
+
+/// Make `path` a symbolic link to `endpoint`.
+#[cfg(unix)]
+fn link(endpoint: &Path, path: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(endpoint, path)
+}
+
+/// No link on Windows: every pipe name is addressable
+/// (`is_addressable`), so no path ever needs a short endpoint, and a
+/// symbolic link would need a privilege a user rarely has.
+#[cfg(windows)]
+fn link(endpoint: &Path, path: &Path) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        format!(
+            "no link from {} to {} on Windows: pipe names have no length limit",
+            path.display(),
+            endpoint.display()
+        ),
+    ))
+}
+
+/// The short dir's base when the run dir is too long: `/tmp/eukhe-<uid>`.
+#[cfg(unix)]
+fn fallback_dir() -> PathBuf {
+    Path::new("/tmp").join(format!(
+        "eukhe-{}",
+        eukhe_types::platform::access::current_uid()
+    ))
+}
+
+/// The short dir's base when the run dir is too long: `eukhe` in the
+/// user's temp dir (never reached: every pipe name is addressable).
+#[cfg(windows)]
+fn fallback_dir() -> PathBuf {
+    std::env::temp_dir().join("eukhe")
 }
 
 fn remove_if_present(path: &Path) -> std::io::Result<()> {
