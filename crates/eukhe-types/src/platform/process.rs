@@ -85,8 +85,20 @@ pub const NEW_SESSION_ENV: &str = "EUKHE_START_NEW_SESSION";
 /// std's only post-fork hook (`pre_exec`) is unsafe, so the child runs
 /// `setsid` itself, first thing in `main`: the command must run an eukhe
 /// binary.
+#[cfg(unix)]
 pub fn request_new_session(command: &mut std::process::Command) {
     command.env(NEW_SESSION_ENV, "1");
+}
+
+/// Windows: start the child in a new process group with a console of its
+/// own and no window ([`CREATE_NEW_PROCESS_GROUP`], [`CREATE_NO_WINDOW`]):
+/// a Ctrl+C or a close of the console it was started from never reaches
+/// it, and the console programs it starts share its hidden console. The
+/// flags apply at creation, so the child has nothing to do itself.
+#[cfg(windows)]
+pub fn request_new_session(command: &mut std::process::Command) {
+    use std::os::windows::process::CommandExt as _;
+    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
 }
 
 /// Windows `CREATE_NEW_PROCESS_GROUP` (a `creation_flags` bit): the child
