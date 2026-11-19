@@ -249,5 +249,7 @@ impl PathPolicy {
     }
 }
 
-#[cfg(test)]
+// The tests build trees of symbolic links, which Windows creates only
+// with a privilege a test runner lacks.
+#[cfg(all(test, unix))]
 mod tests;

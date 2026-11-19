@@ -4,6 +4,9 @@
 //! test), the uid of this process, and the vocabulary of the peer rule
 //! (the rule itself runs as the compiled core:
 //! `eukhe_bend::rules::fsmode::peer_verdict`, `bend/fsmode.bend`).
+//!
+//! Windows has no uid: [`current_uid`] is Unix only, and a named pipe's
+//! default DACL takes the peer rule's place (`transport`).
 
 /// The mode of a file eukhe creates under its home: owner read and write.
 pub const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -11,6 +14,7 @@ pub const PRIVATE_FILE_MODE: u32 = 0o600;
 pub const PRIVATE_DIR_MODE: u32 = 0o700;
 
 /// The real uid of this process.
+#[cfg(unix)]
 #[must_use]
 pub fn current_uid() -> u32 {
     nix::unistd::getuid().as_raw()

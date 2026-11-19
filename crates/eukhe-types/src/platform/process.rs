@@ -8,6 +8,10 @@
 //! matches proves the pid still names the same process. `None` means the
 //! platform exposes no identity - owners then trust liveness checks alone,
 //! exactly like TS records with `processStartId: undefined`.
+//!
+//! Windows: no start identity (a process's creation time is a Win32 query
+//! safe Rust cannot make), liveness from `tasklist`, and no job control:
+//! the suspend calls refuse with an error.
 
 /// The pid-reuse identity: `/proc/<pid>/stat` field 22 (starttime) as
 /// `proc:<starttime>`, else the portable `ps:<lstart>` identity (TS
@@ -17,6 +21,7 @@
 /// process. `None` only when the platform exposes neither - owners then
 /// trust liveness checks alone, exactly like TS records with
 /// `processStartId: undefined`.
+#[cfg(unix)]
 #[must_use]
 pub fn process_start_id(pid: u32) -> Option<String> {
     if pid == 0 {
@@ -32,13 +37,21 @@ pub fn process_start_id(pid: u32) -> Option<String> {
     ps_process_start_id(pid)
 }
 
+/// Windows exposes no start identity to safe Rust: `None`, and owners
+/// trust liveness checks alone.
+#[cfg(windows)]
+#[must_use]
+pub fn process_start_id(_pid: u32) -> Option<String> {
+    None
+}
+
 /// The `ps` the no-/proc probes run. macOS: `/bin/ps` by absolute path,
 /// so the identity and the zombie demotion never depend on `PATH` (the
 /// value is persisted by earlier builds and the TS product, so a missing
 /// or shadowed `ps` must not read as a recycled pid).
 #[cfg(target_vendor = "apple")]
 const PS: &str = "/bin/ps";
-#[cfg(not(target_vendor = "apple"))]
+#[cfg(all(unix, not(target_vendor = "apple")))]
 const PS: &str = "ps";
 
 /// The marker [`request_new_session`] puts in the child's environment;
@@ -84,6 +97,7 @@ pub fn request_startup_stderr(command: &mut std::process::Command) {
 /// pinned for a durable identity. Formatted `ps:<lstart>` - the exact
 /// value the TS product records on macOS and BSD. A pid that `kill(0)`
 /// reports gone answers `None` without spawning `ps`.
+#[cfg(unix)]
 fn ps_process_start_id(pid: u32) -> Option<String> {
     if matches!(pid_exists(pid), Ok(false)) {
         return None;
@@ -172,6 +186,7 @@ pub fn process_executable_path(pid: u32) -> Option<std::path::PathBuf> {
 /// Returns an error when delivering `SIGTSTP` to the process group or
 /// (Linux) to the calling thread fails, or when the thread's signal mask
 /// cannot be changed; the error carries the OS error.
+#[cfg(unix)]
 pub fn stop_own_process_group() -> anyhow::Result<()> {
     #[cfg(target_os = "linux")]
     use nix::sys::pthread::{pthread_kill, pthread_self};
@@ -221,11 +236,27 @@ pub fn stop_own_process_group() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Why the suspend calls refuse on Windows.
+#[cfg(windows)]
+const NO_JOB_CONTROL: &str =
+    "suspending to the background needs Unix job control (SIGTSTP), which Windows lacks";
+
+/// Windows has no process-group stop.
+///
+/// # Errors
+///
+/// Always: Windows has no job-control stop.
+#[cfg(windows)]
+pub fn stop_own_process_group() -> anyhow::Result<()> {
+    anyhow::bail!(NO_JOB_CONTROL)
+}
+
 /// The suspended window's SIGINT shield: `true` while SIGINT must be
 /// swallowed. The handler behind it is installed once (on the first
 /// suspend) and stays for the process lifetime; with the shield down it
 /// runs SIGINT's default action (terminate), so outside the window the
 /// process ends on SIGINT exactly as under `SIG_DFL`.
+#[cfg(unix)]
 static SIGINT_SHIELD: std::sync::Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> =
     std::sync::Mutex::new(None);
 
@@ -243,6 +274,7 @@ static SIGINT_SHIELD: std::sync::Mutex<Option<std::sync::Arc<std::sync::atomic::
 ///
 /// Returns an error when installing the `SIGINT` handler fails; the error
 /// carries the OS error.
+#[cfg(unix)]
 pub fn ignore_sigint_for_suspend() -> anyhow::Result<()> {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Arc, PoisonError};
@@ -261,6 +293,16 @@ pub fn ignore_sigint_for_suspend() -> anyhow::Result<()> {
     .map_err(|error| anyhow::anyhow!("ignoring SIGINT for suspend failed: {error}"))?;
     *shield = Some(default_action);
     Ok(())
+}
+
+/// Windows has no suspend window to shield.
+///
+/// # Errors
+///
+/// Always: Windows has no job-control stop.
+#[cfg(windows)]
+pub fn ignore_sigint_for_suspend() -> anyhow::Result<()> {
+    anyhow::bail!(NO_JOB_CONTROL)
 }
 
 /// Restore SIGINT's default behavior on the SIGCONT resume (TS removes
@@ -292,6 +334,7 @@ pub fn ignore_sigint_for_suspend() -> anyhow::Result<()> {
 /// Returns an error when the calling thread's signal mask cannot be
 /// changed; the shield stays up then (a swallowed SIGINT is the safe
 /// side of a failed restore).
+#[cfg(unix)]
 pub fn restore_default_sigint() -> anyhow::Result<()> {
     use nix::sys::signal::{pthread_sigmask, SigSet, SigmaskHow, Signal};
     use std::sync::atomic::Ordering;
@@ -320,10 +363,23 @@ pub fn restore_default_sigint() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Windows: no shield is ever raised ([`ignore_sigint_for_suspend`]
+/// refuses), so the restore has nothing to lower, as on Unix before the
+/// first suspend.
+///
+/// # Errors
+///
+/// None on Windows.
+#[cfg(windows)]
+pub fn restore_default_sigint() -> anyhow::Result<()> {
+    Ok(())
+}
+
 /// TS `processIdExists`: `kill(pid, 0)` checks existence only. ESRCH and a
 /// pid beyond `pid_t`'s range (which must not wrap into kill's negative
 /// "every process" argument) do not exist; EPERM does - the pid is just
 /// not ours to signal.
+#[cfg(unix)]
 fn pid_exists(pid: u32) -> std::io::Result<bool> {
     use nix::errno::Errno;
     let Ok(pid) = libc::pid_t::try_from(pid) else {
@@ -352,6 +408,7 @@ fn pid_exists(pid: u32) -> std::io::Result<bool> {
 /// Returns an error when the `kill(pid, 0)` probe fails with an error
 /// other than `ESRCH` (dead) or `EPERM` (alive), or when the zombie
 /// demotion cannot run.
+#[cfg(unix)]
 pub fn is_process_alive(pid: u32) -> anyhow::Result<bool> {
     if pid == 0 {
         return Ok(false);
@@ -380,6 +437,41 @@ pub fn is_process_alive(pid: u32) -> anyhow::Result<bool> {
         .trim_start()
         .starts_with('Z');
     Ok(!zombie)
+}
+
+/// Windows: whether `tasklist` (by absolute path in `%SystemRoot%`) lists
+/// the pid. An exited process is never listed, so there is no zombie to
+/// demote. Pid 0 and a pid past `i32::MAX` name no process (Windows
+/// assigns ids far below 2^31; tasklist's filter refuses larger ones).
+///
+/// # Errors
+///
+/// Returns an error when `SystemRoot` is unset or `tasklist` cannot run or
+/// fails.
+#[cfg(windows)]
+pub fn is_process_alive(pid: u32) -> anyhow::Result<bool> {
+    if pid == 0 || i32::try_from(pid).is_err() {
+        return Ok(false);
+    }
+    let root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| anyhow::anyhow!("SystemRoot is unset: tasklist cannot be found"))?;
+    let output =
+        std::process::Command::new(std::path::Path::new(&root).join(r"System32\tasklist.exe"))
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output()?;
+    if !output.status.success() {
+        anyhow::bail!("tasklist failed: {}", output.status);
+    }
+    Ok(lists_pid(&String::from_utf8_lossy(&output.stdout), pid))
+}
+
+/// Whether `tasklist /FO CSV /NH` output has a row of `pid` (its second
+/// field: `"<image>","<pid>",...`).
+#[cfg(windows)]
+fn lists_pid(csv: &str, pid: u32) -> bool {
+    let field = format!("\"{pid}\"");
+    csv.lines()
+        .any(|row| row.split(',').nth(1) == Some(field.as_str()))
 }
 
 /// A process named by its pid and, where the platform exposes one, its
@@ -456,6 +548,7 @@ mod liveness_tests {
     /// A dead pid answers `None` without spawning `ps`: the parent re-runs
     /// this test with a `PATH` whose only `ps` is a fake that would turn
     /// any spawn into `Some("ps:...")`.
+    #[cfg(unix)]
     #[test]
     fn a_dead_pid_has_no_identity_and_spawns_no_ps() {
         use std::os::unix::fs::PermissionsExt;
@@ -595,7 +688,7 @@ mod darwin_ps_probe_tests {
 /// shield must be a handler, not `SIG_IGN`) that swallows SIGINT, and the
 /// resume restores SIGINT's default action. Runs in a re-exec'd child,
 /// whose death by the restored default action is the proof.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod suspend_shield_tests {
     use super::*;
     use nix::sys::signal::{raise, Signal};
@@ -692,7 +785,7 @@ mod suspend_shield_tests {
 /// and unresolvable pids answer `None` on the live path, so this pins the
 /// one contract callers rely on - a resolved path names a live process's
 /// image, never a guess.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod executable_path_tests {
     use super::*;
 
@@ -714,5 +807,64 @@ mod executable_path_tests {
             "the own pid must resolve to the running executable ({resolved:?} vs {current:?})"
         );
         assert_eq!(process_executable_path(0), None);
+    }
+}
+
+/// Windows: the suspend calls refuse, the restore has nothing to lower, no
+/// start identity, and liveness follows a child from spawn to exit.
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn suspend_refuses_and_the_restore_has_nothing_to_lower() {
+        assert_eq!(
+            (
+                stop_own_process_group().map_err(|error| error.to_string()),
+                ignore_sigint_for_suspend().map_err(|error| error.to_string()),
+                restore_default_sigint().map_err(|error| error.to_string()),
+            ),
+            (
+                Err(NO_JOB_CONTROL.to_string()),
+                Err(NO_JOB_CONTROL.to_string()),
+                Ok(())
+            )
+        );
+    }
+
+    #[test]
+    fn a_child_reads_alive_until_it_exits_and_has_no_start_identity() {
+        let mut child = std::process::Command::new("cmd")
+            .args(["/C", "pause"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn cmd");
+        let pid = child.id();
+        assert_eq!(
+            (
+                is_process_alive(pid).expect("liveness"),
+                process_start_id(pid)
+            ),
+            (true, None)
+        );
+        child.kill().expect("kill");
+        child.wait().expect("wait");
+        // The process handle goes too: nothing holds the exited process.
+        drop(child);
+        assert!(!is_process_alive(pid).expect("liveness"));
+    }
+
+    #[test]
+    fn tasklist_rows_name_their_pid_in_the_second_field() {
+        let csv = "\"cmd.exe\",\"4120\",\"Console\",\"1\",\"4,512 K\"\r\n";
+        assert_eq!(
+            [
+                lists_pid(csv, 4120),
+                lists_pid(csv, 412),
+                lists_pid("INFO: No tasks", 4120)
+            ],
+            [true, false, false]
+        );
     }
 }

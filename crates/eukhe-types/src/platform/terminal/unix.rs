@@ -16,6 +16,8 @@ use std::io;
 
 use nix::sys::termios::{tcflow, tcgetattr, tcsetattr, FlowArg, SetArg, Termios};
 
+use super::TtyCooked;
+
 /// The classic control characters `stty sane` restores (Linux
 /// defaults): a poisoned tty may carry zeroes here, and canonical
 /// editing depends on them (`VERASE`, `VEOF`, ...).
@@ -33,18 +35,6 @@ const SANE_CONTROL_CHARS: [(usize, u8); 12] = [
     (libc::VLNEXT, 22),
     (libc::VMIN, 1),
 ];
-
-/// The outcome of a cooked-tty verification.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TtyCooked {
-    /// The tty already reads cooked; nothing changed.
-    AlreadyCooked,
-    /// The tty read raw and the sane reconstruction was applied.
-    Repaired,
-    /// No tty or no termios access: nothing to verify (the headless
-    /// harness, a dead terminal).
-    Unavailable,
-}
 
 /// Whether the attrs describe a cooked tty: canonical input and echo -
 /// the two flags a raw leak takes away.

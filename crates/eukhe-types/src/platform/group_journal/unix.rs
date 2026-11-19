@@ -30,7 +30,7 @@ use std::sync::{Mutex, OnceLock, PoisonError};
 
 use serde::{Deserialize, Serialize};
 
-use super::process::process_start_id;
+use crate::platform::process::process_start_id;
 
 /// One journal line.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

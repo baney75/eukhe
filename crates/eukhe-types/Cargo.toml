@@ -12,23 +12,26 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
+# platform/transport: a socket peer of another uid is dropped with a
+# warning. Already in the graph (workspace). MIT.
+tracing.workspace = true
+# pi_ai: ordered string maps (headers, env, thinking-level maps, prompt
+# sections) keep JS object insertion order; the same crate backs
+# serde_json's `preserve_order` Map.
+indexmap = { version = "2", features = ["serde"] }
+
+# The Unix platform: signals, termios, uids and sockets.
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 # platform: signals, the suspend's thread mask and stop, the tty's
 # termios, this process's uid (platform/access), and the uid at the other
 # end of a blocking socket (platform/transport) through safe wrappers. MIT.
 nix = { version = "0.29", features = ["signal", "process", "pthread", "term", "user", "socket"] }
-# platform/transport: a socket peer of another uid is dropped with a
-# warning. Already in the graph (workspace). MIT.
-tracing.workspace = true
 # platform/process: the suspend window's SIGINT shield (a handler that
 # swallows or runs the default action) without unsafe `sigaction`.
 # Already in the graph through crossterm. MIT OR Apache-2.0.
 signal-hook = { version = "0.3", default-features = false }
 socket2 = "0.6"
-# pi_ai: ordered string maps (headers, env, thinking-level maps, prompt
-# sections) keep JS object insertion order; the same crate backs
-# serde_json's `preserve_order` Map.
-indexmap = { version = "2", features = ["serde"] }
 
 # platform/process: `proc_pidpath` for the lease holder's executable
 # through a safe wrapper (darwin-libproc pins memchr ~2.3, which the

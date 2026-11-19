@@ -10,6 +10,9 @@
 //! nothing is flushed. The marker makes it once: the replacement process
 //! inherits the variable, finds the marker, and passes the point. Unset
 //! (every real run), a point is a no-op.
+//!
+//! Windows has no `SIGKILL`: the process dies by `std::process::abort`,
+//! a fail-fast exit that runs no handler and flushes nothing.
 
 use std::fs::OpenOptions;
 use std::sync::LazyLock;
@@ -26,8 +29,8 @@ static TARGET: LazyLock<Option<(String, String)>> = LazyLock::new(|| {
 });
 
 /// The process passes the point `point` of an effect of kind `kind`: it
-/// dies here by `SIGKILL` when the environment names this point and no
-/// process died at it before.
+/// dies here by `SIGKILL` (Windows: a fail-fast abort) when the
+/// environment names this point and no process died at it before.
 pub fn kill_point(kind: &str, point: &str) {
     let Some((target, marker)) = TARGET.as_ref() else {
         return;
@@ -44,7 +47,9 @@ pub fn kill_point(kind: &str, point: &str) {
     {
         return;
     }
+    #[cfg(unix)]
     let _ = nix::sys::signal::kill(nix::unistd::Pid::this(), nix::sys::signal::Signal::SIGKILL);
-    // SIGKILL cannot be caught: the process is gone before this runs.
+    // SIGKILL cannot be caught: the process is gone before this runs
+    // (Windows: the death itself).
     std::process::abort();
 }
