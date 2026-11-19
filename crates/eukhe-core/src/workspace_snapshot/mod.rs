@@ -507,8 +507,10 @@ enum OpenLeaf {
 
 /// Open one raw fd with `O_NOFOLLOW`, closing it on drop; the guard keeps
 /// the walk's error paths leak-free without unsafe constructors.
+#[cfg(unix)]
 struct FdGuard(nix::libc::c_int);
 
+#[cfg(unix)]
 impl Drop for FdGuard {
     fn drop(&mut self) {
         let _ = nix::unistd::close(self.0);
@@ -520,6 +522,7 @@ impl Drop for FdGuard {
 /// leaf via `openat(O_NOFOLLOW)` or `readlinkat`. A symlink swapped in
 /// after the walk started still cannot redirect the read, because every
 /// component is pinned by its opened fd, not its path.
+#[cfg(unix)]
 fn open_leaf(
     root: &Path,
     path: &str,
@@ -632,9 +635,15 @@ fn open_leaf(
     }
 }
 
+#[cfg(unix)]
 fn io_from_errno(errno: nix::errno::Errno) -> std::io::Error {
     std::io::Error::from_raw_os_error(errno as i32)
 }
+
+#[cfg(windows)]
+mod leaf_windows;
+#[cfg(windows)]
+use leaf_windows::open_leaf;
 
 /// Classify and stage one path's worktree leaf: a regular file becomes a
 /// content-addressed blob (owner-only mode), an in-root symlink a link

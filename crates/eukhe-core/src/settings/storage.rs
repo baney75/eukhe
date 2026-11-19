@@ -256,12 +256,12 @@ struct FileIdentity {
 }
 
 fn stat_identity(metadata: &fs::Metadata) -> FileIdentity {
-    use std::os::unix::fs::MetadataExt;
+    let stat = crate::platform::stat::stat_fields(metadata);
     FileIdentity {
-        dev: metadata.dev(),
-        ino: metadata.ino(),
-        mtime_sec: metadata.mtime(),
-        mtime_nsec: metadata.mtime_nsec(),
+        dev: stat.dev,
+        ino: stat.ino,
+        mtime_sec: stat.modified.0,
+        mtime_nsec: stat.modified.1,
         len: metadata.len(),
     }
 }

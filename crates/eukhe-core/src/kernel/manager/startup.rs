@@ -393,7 +393,7 @@ impl Inner {
             // grace kills the group, so subprocesses the cell started die
             // with it. A wrapped kernel's group is the wrapper's: killing
             // it ends the wrapper, and the stub sees its stdin close.
-            command.process_group(0);
+            crate::platform::set_new_process_group(command.as_std_mut());
             command.spawn().map_err(SpawnError::from)
         });
         let child = match spawned {
@@ -864,6 +864,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
+    #[cfg(unix)]
     #[test]
     fn kernel_stderr_log_rotation_tightens_a_world_readable_log() {
         use std::io::Write;

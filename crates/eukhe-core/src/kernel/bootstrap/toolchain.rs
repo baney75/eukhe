@@ -15,7 +15,6 @@
 use std::collections::BTreeMap;
 use std::ffi::{OsStr, OsString};
 use std::io::Write as _;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex, PoisonError};
@@ -446,7 +445,7 @@ fn unpack_uv(archive: &[u8], dest: &Path) -> anyhow::Result<()> {
         let mut file = std::fs::File::create(&staged)?;
         std::io::copy(&mut entry, &mut file)?;
         file.flush()?;
-        file.set_permissions(std::fs::Permissions::from_mode(0o755))?;
+        eukhe_types::platform::mode::set_file_mode(&file, 0o755)?;
         drop(file);
         std::fs::rename(&staged, dest)?;
         return Ok(());

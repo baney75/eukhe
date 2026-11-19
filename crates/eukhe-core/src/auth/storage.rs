@@ -207,12 +207,12 @@ struct FileIdentity {
 }
 
 fn stat_identity(metadata: &fs::Metadata) -> FileIdentity {
-    use std::os::unix::fs::MetadataExt;
+    let stat = crate::platform::stat::stat_fields(metadata);
     FileIdentity {
-        dev: metadata.dev(),
-        ino: metadata.ino(),
-        mtime_sec: metadata.mtime(),
-        mtime_nsec: metadata.mtime_nsec(),
+        dev: stat.dev,
+        ino: stat.ino,
+        mtime_sec: stat.modified.0,
+        mtime_nsec: stat.modified.1,
         len: metadata.len(),
     }
 }
@@ -473,12 +473,14 @@ mod tests {
 
     /// A shared document and two agent dirs whose auth.json links to it
     /// (`~/.eukhe/auth.json` -> `~/.pi/agent/auth.json`).
+    #[cfg(unix)]
     struct Linked {
         _dirs: [tempfile::TempDir; 3],
         real: PathBuf,
         links: [PathBuf; 2],
     }
 
+    #[cfg(unix)]
     fn linked_document() -> Linked {
         let dirs = [(); 3].map(|()| tempfile::tempdir().unwrap());
         let real = dirs[0].path().join("auth.json");
@@ -494,6 +496,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_linked_auth_file_locks_the_real_file() {
         // TS proper-lockfile locks `realpath(auth.json).lock` (TS #11655):
@@ -524,6 +527,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn auth_files_linked_to_one_document_share_its_refresh_flights() {
         let Linked { _dirs, real, links } = linked_document();
@@ -539,6 +543,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn auth_files_linked_to_one_document_take_turns_in_one_process() {
         // One in-process lock per document: a writer through the second

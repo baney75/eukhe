@@ -8,8 +8,9 @@
 #[cfg(test)]
 mod tests;
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
+
+use eukhe_types::platform::mode::{set_mode, CreationMode as _};
 use std::sync::Arc;
 
 use eukhe_ai::models::{create_models, CreateModelsOptions};
@@ -168,7 +169,7 @@ async fn fork_into(
         })?;
     tokio::fs::DirBuilder::new()
         .recursive(true)
-        .mode(PRIVATE_DIR_MODE)
+        .creation_mode(PRIVATE_DIR_MODE)
         .create(&parent)
         .await
         .map_err(io("create", &parent))?;
@@ -362,7 +363,7 @@ enum Snapshot {
 /// `main.jsonl` had before.
 async fn copy_without_main(source: &Path, target: &Path) -> Result<u64, ForkError> {
     tokio::fs::DirBuilder::new()
-        .mode(PRIVATE_DIR_MODE)
+        .creation_mode(PRIVATE_DIR_MODE)
         .create(target)
         .await
         .map_err(io("create staging directory", target))?;
@@ -385,9 +386,7 @@ async fn finish_copy(source: &Path, target: &Path, published: u64) -> Result<Sna
         .map_err(io("copy", &main))?;
     // A copy takes the source's mode; the private staging dir hides it
     // until it is private too.
-    tokio::fs::set_permissions(&copy, std::fs::Permissions::from_mode(PRIVATE_FILE_MODE))
-        .await
-        .map_err(io("restrict", &copy))?;
+    set_mode(&copy, PRIVATE_FILE_MODE).map_err(io("restrict", &copy))?;
     Ok(if copied == published {
         Snapshot::Consistent
     } else {
@@ -421,7 +420,7 @@ async fn copy_dir_contents(
             let file_type = entry.file_type().await.map_err(io("inspect", &path))?;
             if file_type.is_dir() {
                 tokio::fs::DirBuilder::new()
-                    .mode(PRIVATE_DIR_MODE)
+                    .creation_mode(PRIVATE_DIR_MODE)
                     .create(&destination)
                     .await
                     .map_err(io("create", &destination))?;
@@ -430,12 +429,7 @@ async fn copy_dir_contents(
                 tokio::fs::copy(&path, &destination)
                     .await
                     .map_err(io("copy", &path))?;
-                tokio::fs::set_permissions(
-                    &destination,
-                    std::fs::Permissions::from_mode(PRIVATE_FILE_MODE),
-                )
-                .await
-                .map_err(io("restrict", &destination))?;
+                set_mode(&destination, PRIVATE_FILE_MODE).map_err(io("restrict", &destination))?;
             }
         }
     }

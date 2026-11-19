@@ -31,6 +31,7 @@ use eukhe_durable::storage::jsonl::{open_native_jsonl_storage, JsonlStorageOptio
 use eukhe_durable::types::{ConversationId, EntryHead, EntryId};
 use eukhe_types::pi_ai::{Message, ModelThinkingLevel};
 use eukhe_types::platform::access::PRIVATE_DIR_MODE;
+use eukhe_types::platform::mode::CreationMode as _;
 use futures::FutureExt;
 
 use self::plan::{plan_import, ImportPlan, PlannedHead};
@@ -127,13 +128,13 @@ pub async fn import_legacy_session(
         })?;
     tokio::fs::DirBuilder::new()
         .recursive(true)
-        .mode(PRIVATE_DIR_MODE)
+        .creation_mode(PRIVATE_DIR_MODE)
         .create(&parent)
         .await
         .map_err(io("create", &parent))?;
     let _lock = lock_staging(&staging).map_err(io("lock staging directory", &staging))?;
     tokio::fs::DirBuilder::new()
-        .mode(PRIVATE_DIR_MODE)
+        .creation_mode(PRIVATE_DIR_MODE)
         .create(&staging)
         .await
         .map_err(io("create staging directory", &staging))?;

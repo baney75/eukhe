@@ -12,7 +12,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -40,12 +39,13 @@ pub(crate) struct Stat {
 
 impl Stat {
     fn of(meta: &fs::Metadata) -> Self {
+        let stat = crate::platform::stat::stat_fields(meta);
         Self {
-            inode: meta.ino(),
-            len: meta.size(),
-            mode: meta.mode(),
-            modified: (meta.mtime(), meta.mtime_nsec()),
-            changed: (meta.ctime(), meta.ctime_nsec()),
+            inode: stat.ino,
+            len: meta.len(),
+            mode: stat.mode,
+            modified: stat.modified,
+            changed: stat.changed,
         }
     }
 }

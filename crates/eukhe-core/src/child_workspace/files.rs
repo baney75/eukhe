@@ -6,8 +6,6 @@ use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::fs;
 use std::io::{self, Read};
-use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
@@ -58,7 +56,8 @@ pub(super) fn content(path: &Path) -> io::Result<Option<Content>> {
     }
     Ok(Some(Content::File {
         digest: hasher.finalize().into(),
-        executable: meta.permissions().mode() & 0o111 != 0,
+        executable: eukhe_types::platform::mode::mode_of(&meta)
+            .is_some_and(|mode| mode & 0o111 != 0),
     }))
 }
 
@@ -87,7 +86,7 @@ pub(super) fn copy_entry(from: &Path, to: &Path) -> io::Result<Copied> {
         fs::create_dir_all(dir)?;
     }
     if meta.file_type().is_symlink() {
-        std::os::unix::fs::symlink(fs::read_link(from)?, to)?;
+        crate::platform::fs::symlink(&fs::read_link(from)?, to)?;
         return Ok(Copied::Cloned);
     }
     if !meta.is_file() {
@@ -253,7 +252,21 @@ pub(super) async fn git_paths(dir: &Path) -> Option<BTreeSet<PathBuf>> {
             .stdout
             .split(|&b| b == 0)
             .filter(|path| !path.is_empty())
-            .map(|path| PathBuf::from(OsStr::from_bytes(path)))
+            .map(path_of)
             .collect()
     })
+}
+
+/// The path git printed (`-z`: the raw bytes).
+#[cfg(unix)]
+fn path_of(bytes: &[u8]) -> PathBuf {
+    use std::os::unix::ffi::OsStrExt as _;
+    PathBuf::from(OsStr::from_bytes(bytes))
+}
+
+/// The path git printed: UTF-8 on Windows, where git converts the wide
+/// names to UTF-8 (a byte that is none cannot come from a Windows name).
+#[cfg(windows)]
+fn path_of(bytes: &[u8]) -> PathBuf {
+    PathBuf::from(String::from_utf8_lossy(bytes).into_owned())
 }
