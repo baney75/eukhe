@@ -3,7 +3,8 @@
 //! A ticket or stale-file check must prove the endpoint at a socket path is
 //! the same object it was when the identity was recorded: a socket file's
 //! dev + ino, or (Linux) a listening abstract socket's sockfs inode with dev
-//! 0. Both survive path rewrites and pid reuse, and a new bind of the path
+//! 0, or (Windows) the 128 random bits of the pipe the endpoint file names.
+//! Each survives path rewrites and pid reuse, and a new bind of the path
 //! gets a new one.
 
 use std::path::Path;
@@ -13,6 +14,7 @@ use crate::daemon::SocketIdentity;
 /// The endpoint's identity: the listening abstract socket named by `path`
 /// (Linux), else the socket file's dev + ino; `None` when neither is
 /// there.
+#[cfg(unix)]
 #[must_use]
 pub fn socket_identity(path: &Path) -> Option<SocketIdentity> {
     use std::os::unix::fs::MetadataExt;
@@ -29,10 +31,21 @@ pub fn socket_identity(path: &Path) -> Option<SocketIdentity> {
     })
 }
 
+/// The endpoint's identity (Windows): the random bits of the pipe the
+/// endpoint file at `path` names, the high half as dev, the low as ino;
+/// `None` when no file there names one.
+#[cfg(windows)]
+#[must_use]
+pub fn socket_identity(path: &Path) -> Option<SocketIdentity> {
+    let (dev, ino) = super::transport::endpoint_bits(path)?;
+    Some(SocketIdentity { dev, ino })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[cfg(unix)]
     #[test]
     fn identity_is_stable_and_distinguishes_files() {
         let dir = tempfile::TempDir::new().expect("temp dir");
@@ -58,9 +71,25 @@ mod tests {
         assert_eq!(socket_identity(&socket), Some(one.clone()));
         drop(first);
         let _ = std::fs::remove_file(&socket);
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         assert_eq!(socket_identity(&socket), None);
         let _second = crate::platform::transport::bind_tokio(&socket).expect("rebind");
         assert_ne!(socket_identity(&socket), Some(one));
+    }
+
+    /// A file that names no pipe has no identity (Windows).
+    #[cfg(windows)]
+    #[test]
+    fn a_file_naming_no_pipe_has_no_identity() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let file = dir.path().join("a.sock");
+        std::fs::write(&file, b"x").expect("write");
+        assert_eq!(
+            (
+                socket_identity(&file),
+                socket_identity(&dir.path().join("missing.sock"))
+            ),
+            (None, None)
+        );
     }
 }

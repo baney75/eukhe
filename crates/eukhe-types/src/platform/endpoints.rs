@@ -4,7 +4,9 @@
 //! (`transport`): no file marks them, and the kernel's census of listening
 //! Unix sockets (`/proc/net/unix`, where an abstract name shows as
 //! `@<name>`) is where they are found. Socket files (an earlier release's
-//! daemon, another program's socket) are found on disk on every platform.
+//! daemon, another program's socket) are found on disk on every Unix. On
+//! Windows an endpoint is a file naming its pipe (`transport`), found on
+//! disk too.
 
 use std::path::{Path, PathBuf};
 
@@ -121,10 +123,19 @@ pub fn listening_abstract(path: &Path) -> Option<Listening> {
 }
 
 /// Whether a socket file is at `path` (not following a link).
+#[cfg(unix)]
 #[must_use]
 pub fn is_socket_file(path: &Path) -> bool {
     use std::os::unix::fs::FileTypeExt;
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
+}
+
+/// Whether an endpoint file is at `path` (Windows, not following a link):
+/// a file naming a pipe eukhe made, live or left by a crashed listener.
+#[cfg(windows)]
+#[must_use]
+pub fn is_socket_file(path: &Path) -> bool {
+    super::transport::is_endpoint_file(path)
 }
 
 /// Whether an endpoint is at `path` ([`super::transport::endpoint_behind`]:
@@ -237,7 +248,7 @@ mod tests {
             (true, vec![socket.clone()])
         );
         drop(listener);
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", windows))]
         assert_eq!(
             (endpoint_exists(&socket), endpoints_in(dir.path())),
             (false, Vec::<PathBuf>::new())
