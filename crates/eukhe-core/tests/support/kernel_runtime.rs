@@ -55,7 +55,11 @@ fn provision() -> PathBuf {
     let base = std::env::temp_dir().join("eukhe-test-kernel");
     std::fs::create_dir_all(&base).expect("create the test kernel dir");
     let venv = base.join(&key[..16]);
+    // A Windows venv keeps its interpreter under `Scripts\`.
+    #[cfg(unix)]
     let python = venv.join("bin").join("python");
+    #[cfg(windows)]
+    let python = venv.join("Scripts").join("python.exe");
 
     let lock = std::fs::File::create(base.join(format!("{}.lock", &key[..16])))
         .expect("create the test kernel lock");
