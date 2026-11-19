@@ -5,6 +5,8 @@
 //! behaviorally: the next Enter re-opens the SAME panel (an Enter on
 //! the empty prompt bar submits nothing), and the run never hands off to
 //! the agents view.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

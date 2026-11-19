@@ -7,6 +7,8 @@
 //! open-into-a-setting regression pins (the menu's top rule and the
 //! padding-x stay), and the search field's edit keys after a no-match
 //! query.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

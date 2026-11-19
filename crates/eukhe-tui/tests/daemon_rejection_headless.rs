@@ -10,6 +10,8 @@
 //! before dispatching — an empty alt+enter never reaches the daemon — and
 //! `onSubmit`'s prompt catch restores the draft and calls `showError`
 //! instead of exiting.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

@@ -1354,11 +1354,14 @@ fn has_run_prefix(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use serde_json::json;
+    #[cfg(unix)]
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
     use super::*;
 
+    #[cfg(unix)]
     fn order(client: &DaemonClient, text: &str, session_command: bool) -> PromptOrder {
         PromptOrder {
             client: client.clone(),
@@ -1380,6 +1383,7 @@ mod tests {
     /// stalled summarizer) holds the submits typed after it for the cap at
     /// most, as the ack cap did, and still settles with its real answer
     /// instead of a lost-ack row.
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_long_session_command_holds_later_submits_for_the_ack_cap_at_most() {
         let dir = tempfile::TempDir::new().expect("temp dir");

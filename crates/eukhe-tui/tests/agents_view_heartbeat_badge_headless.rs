@@ -4,6 +4,8 @@
 //! the armed render barrier, the generation gate applied) repaints the
 //! row with its `@ N` badge: the badge can only come from the
 //! event-driven refetch, so the plan proves the whole wiring.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

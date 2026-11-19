@@ -4,6 +4,8 @@
 //! (llama.cpp), streamed deltas, and the settled message with its usage and
 //! stream marks -- and the frames show each phase: `prefill <elapsed>s`,
 //! `prefill p/n tokens`, `decode N tok/s`, then the exact summary.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // - the casts: timestamps in ms fit an i64 for centuries.
 #![allow(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
 // - the futures are bounded by the surface's lifetime; boxing them would

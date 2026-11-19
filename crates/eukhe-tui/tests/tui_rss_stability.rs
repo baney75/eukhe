@@ -15,6 +15,8 @@
 //!
 //! Linux-only by construction (`/proc/self/statm`): the whole file compiles
 //! to nothing on macOS.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 #![cfg(target_os = "linux")]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):

@@ -19,6 +19,8 @@
 //! a two-entry session tree, and asserts the contract: the selector opens
 //! exactly once (press two), the final frame is the inert empty editor,
 //! and a non-Escape key re-arms the gesture for a fresh chain.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the mock supervisor's request loop is one arm per wire command (the

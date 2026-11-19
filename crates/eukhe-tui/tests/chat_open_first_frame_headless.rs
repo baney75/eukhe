@@ -10,6 +10,8 @@
 //! loaded-daemon repro from the report): the dock's count data must
 //! fold synchronously with the attach, so no captured frame ever
 //! repaints the dock in late.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

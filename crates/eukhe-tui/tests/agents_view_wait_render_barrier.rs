@@ -8,6 +8,8 @@
 //! construction: the plan cannot reach `Done` before the data rendered,
 //! where the retired wall-clock settle only won on an idle machine (the
 //! mock's 2s answer lag outlives any 300ms budget deterministically).
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

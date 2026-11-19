@@ -603,8 +603,13 @@ fn spawn_kitty_probe() {
                         let _ = answer_tx.send(Ok(false));
                         return;
                     }
+                    #[cfg(unix)]
                     let _ = answer_tx
                         .send(crossterm::terminal::supports_keyboard_enhancement_checked_raw());
+                    // The Windows console has no keyboard enhancement
+                    // flags (crossterm answers false there).
+                    #[cfg(windows)]
+                    let _ = answer_tx.send(Ok(false));
                     // The guard releases at this scope's end; the answer
                     // path's `enable_kitty` takes the lock after it.
                     drop(modes);

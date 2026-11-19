@@ -4,6 +4,8 @@
 //! session through `set_model`, a cleared role that falls back, and the
 //! all-roles model: `/model --all` switches with `allRoles`, every LLM
 //! role runs on it, and the note names what a project still sets.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // - the futures are bounded by the surface's lifetime; boxing them would
 //   add an allocation to the steady-state loop.
 #![allow(clippy::large_futures)]

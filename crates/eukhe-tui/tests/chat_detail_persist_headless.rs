@@ -5,6 +5,8 @@
 //! settings store — opens at the saved level instead of resetting to the
 //! `overview` startup default (the collapse mode, operator directive
 //! 2026-09-28).
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded
