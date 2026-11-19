@@ -72,6 +72,21 @@ pub fn request_new_session(command: &mut std::process::Command) {
     command.env(NEW_SESSION_ENV, "1");
 }
 
+/// Windows `CREATE_NEW_PROCESS_GROUP` (a `creation_flags` bit): the child
+/// leads a new process group, and a console's Ctrl+C, which goes to every
+/// process of the console's groups that has it enabled, is disabled in
+/// the new group.
+#[cfg(windows)]
+pub const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+
+/// Windows `CREATE_NO_WINDOW` (a `creation_flags` bit): the child gets a
+/// console of its own with no window, so nothing it or its own console
+/// children do reaches the parent's console, and no window opens. A
+/// `DETACHED_PROCESS` child has no console at all: every console program
+/// it starts would open a window of its own.
+#[cfg(windows)]
+pub const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
 /// The marker [`request_startup_stderr`] puts in the child's environment;
 /// the startup of the eukhe binaries (`eukhe`, `eukhe-daemon`) consumes it
 /// (`eukhe_core::platform::process::claim_startup_stderr`).
