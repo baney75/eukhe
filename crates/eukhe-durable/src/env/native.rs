@@ -1,8 +1,11 @@
 //! The local execution environment: the host's file system and shell. Port
-//! of `env/node.ts` (`NodeExecutionEnv`) for Linux and macOS.
+//! of `env/node.ts` (`NodeExecutionEnv`) for Linux, macOS and Windows.
 //!
-//! The Windows branches of `node.ts` (Git Bash discovery, `taskkill`) are not
-//! ported: the port targets Linux and macOS only.
+//! Windows: the shell is the first `bash.exe` `where` finds that is not the
+//! legacy WSL launcher, else Git Bash under `%ProgramFiles%`; a kill ends
+//! the command's process tree through `taskkill`; created files and
+//! directories take their parent's ACL (no mode bits); a no-follow open
+//! checks the final component with `lstat` first (no `O_NOFOLLOW`).
 
 mod exec;
 mod paths;
@@ -14,11 +17,14 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::Metadata;
 use std::future::Future;
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+#[cfg(unix)]
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::sync::{Arc, Mutex};
 
 use eukhe_chord::context::Context;
+use eukhe_types::platform::mode::CreationMode as _;
 use futures::future::BoxFuture;
+#[cfg(unix)]
 use nix::fcntl::OFlag;
 
 use super::native_watch::{NativeFileWatcher, NativeWatchOptions};
@@ -169,8 +175,20 @@ async fn with_signal<T>(
     clippy::cast_precision_loss,
     reason = "Node computes mtimeMs as a double the same way"
 )]
+#[cfg(unix)]
 fn mtime_ms(metadata: &Metadata) -> f64 {
     metadata.mtime() as f64 * 1000.0 + metadata.mtime_nsec() as f64 / 1_000_000.0
+}
+
+/// Node's `stats.mtimeMs` on Windows: the modification time since the
+/// epoch in milliseconds (0 when the platform reports none).
+#[cfg(windows)]
+fn mtime_ms(metadata: &Metadata) -> f64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0.0, |since| since.as_secs_f64() * 1000.0)
 }
 
 /// `fileInfoFromStats`.
@@ -196,7 +214,7 @@ pub(super) fn file_info_from_metadata(
         name: paths::basename(path).to_owned(),
         path: path.to_owned(),
         kind,
-        size: metadata.size(),
+        size: metadata.len(),
         mtime_ms: mtime_ms(metadata),
     })
 }
@@ -243,6 +261,34 @@ fn symlink_refused(path: &str, cause: io::Error) -> FileError {
     .with_cause(Arc::new(cause))
 }
 
+/// Opens `target` to read. Nonblocking, so opening a FIFO does not wait
+/// for a writer; `no_follow` refuses a final-component symlink (ELOOP).
+#[cfg(unix)]
+fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
+    let mut flags = OFlag::O_NONBLOCK;
+    if no_follow {
+        flags |= OFlag::O_NOFOLLOW;
+    }
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(flags.bits())
+        .open(target)
+}
+
+/// Opens `target` to read. `no_follow` refuses a final-component symlink
+/// with ELOOP's Windows code (`ERROR_CANT_RESOLVE_FILENAME`), from an
+/// `lstat` just before the open: a link swapped in between them is
+/// followed.
+#[cfg(windows)]
+fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
+    if no_follow && std::fs::symlink_metadata(target)?.file_type().is_symlink() {
+        return Err(io::Error::from_raw_os_error(
+            super::node_error::ERROR_CANT_RESOLVE_FILENAME,
+        ));
+    }
+    std::fs::OpenOptions::new().read(true).open(target)
+}
+
 /// `mkdir(path, { recursive, mode })`: every directory it creates gets
 /// `mode` (less the umask).
 async fn make_dir(path: &str, recursive: bool, mode: u32) -> Result<(), FileError> {
@@ -250,7 +296,7 @@ async fn make_dir(path: &str, recursive: bool, mode: u32) -> Result<(), FileErro
     blocking(move || {
         std::fs::DirBuilder::new()
             .recursive(recursive)
-            .mode(mode)
+            .creation_mode(mode)
             .create(&target)
     })
     .await
@@ -377,16 +423,7 @@ impl NativeExecutionEnv {
         let no_follow = options.no_follow;
         let target = resolved.clone();
         let opened = tokio::task::spawn_blocking(move || {
-            // Nonblocking, so opening a FIFO does not wait for a writer.
-            let mut flags = OFlag::O_NONBLOCK;
-            if no_follow {
-                flags |= OFlag::O_NOFOLLOW;
-            }
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(flags.bits())
-                .open(&target)
-                .map_err(|error| ("open", error))?;
+            let file = open_for_read(&target, no_follow).map_err(|error| ("open", error))?;
             let metadata = file.metadata().map_err(|error| ("fstat", error))?;
             Ok::<_, (&'static str, io::Error)>((file, metadata))
         });
@@ -394,7 +431,7 @@ impl NativeExecutionEnv {
             Ok(Ok(opened)) => opened,
             Ok(Err((syscall, error))) => {
                 // O_NOFOLLOW reports a final-component symlink as ELOOP (EMLINK
-                // on some BSDs).
+                // on some BSDs); the Windows check reports it as ELOOP.
                 if no_follow && matches!(uv_code(&error), "ELOOP" | "EMLINK") {
                     return Err(symlink_refused(&resolved, error));
                 }
@@ -452,7 +489,7 @@ impl NativeExecutionEnv {
                 .write(true)
                 .create(true)
                 .truncate(true)
-                .mode(mode)
+                .creation_mode(mode)
                 .open(&target)
                 .map_err(|error| io::Error::new(error.kind(), SyscallError("open", error)))?;
             file.write_all(&content)
@@ -486,7 +523,7 @@ impl NativeExecutionEnv {
             let mut file = std::fs::OpenOptions::new()
                 .append(true)
                 .create(true)
-                .mode(mode)
+                .creation_mode(mode)
                 .open(&target)
                 .map_err(|error| io::Error::new(error.kind(), SyscallError("open", error)))?;
             file.write_all(&content)

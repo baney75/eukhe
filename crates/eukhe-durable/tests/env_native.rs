@@ -1,4 +1,6 @@
 //! Port of `test/env-node.test.ts` (Linux and macOS cases).
+// The cases of env-node.test.ts for Linux and macOS (symlinks, POSIX paths, a bash): Unix only.
+#![cfg(unix)]
 
 use std::collections::BTreeMap;
 use std::fmt::Write;

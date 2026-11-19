@@ -4,7 +4,10 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::{self, Metadata};
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+#[cfg(windows)]
+use std::os::windows::fs::MetadataExt;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -140,8 +143,34 @@ fn kind_of(metadata: &Metadata) -> EntryKind {
     clippy::cast_precision_loss,
     reason = "Node computes mtimeMs as a double: sec * 1e3 + nsec / 1e6"
 )]
+#[cfg(unix)]
 fn mtime_ms(metadata: &Metadata) -> f64 {
     metadata.mtime() as f64 * 1000.0 + metadata.mtime_nsec() as f64 / 1e6
+}
+
+/// Node's `mtimeMs` on Windows: the modification time since the epoch in
+/// milliseconds (0 when the platform reports none).
+#[cfg(windows)]
+fn mtime_ms(metadata: &Metadata) -> f64 {
+    metadata
+        .modified()
+        .ok()
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .map_or(0.0, |since| since.as_secs_f64() * 1000.0)
+}
+
+/// A file's identity: `(dev, ino)`.
+#[cfg(unix)]
+fn identity(metadata: &Metadata) -> (u64, u64) {
+    (metadata.dev(), metadata.ino())
+}
+
+/// A file's identity on Windows: no volume (dev 0) and its creation time
+/// as the inode (the file index is unstable std), so a replacing file
+/// made outside the tunneling window differs.
+#[cfg(windows)]
+fn identity(metadata: &Metadata) -> (u64, u64) {
+    (0, metadata.creation_time())
 }
 
 /// JS `Date.now()`: whole milliseconds since the epoch.
@@ -160,11 +189,12 @@ fn now_ms() -> f64 {
 fn entry_of(metadata: &Metadata, hash: Option<String>) -> Entry {
     let kind = kind_of(metadata);
     let directory = kind == EntryKind::Directory;
+    let (dev, ino) = identity(metadata);
     Entry {
         kind,
-        dev: metadata.dev(),
-        ino: metadata.ino(),
-        size: if directory { 0 } else { metadata.size() },
+        dev,
+        ino,
+        size: if directory { 0 } else { metadata.len() },
         mtime_ms: if directory { 0.0 } else { mtime_ms(metadata) },
         hash,
     }
@@ -277,7 +307,7 @@ impl Scanner<'_> {
         let mut hash = None;
         if self.polling.load(Ordering::SeqCst)
             && metadata.is_file()
-            && metadata.size() <= HASH_MAX_BYTES
+            && metadata.len() <= HASH_MAX_BYTES
             && now_ms() - mtime_ms(metadata) < HASH_RECENT_MS
         {
             // An unreadable file is compared without its hash (TS `() => undefined`).
@@ -412,4 +442,11 @@ pub(super) fn any_unreliable(paths: &[String]) -> bool {
 #[cfg(target_os = "macos")]
 pub(super) fn any_unreliable(_paths: &[String]) -> bool {
     false
+}
+
+/// Windows has no native watch backend (`polling.rs`): every path is
+/// watched by snapshots.
+#[cfg(windows)]
+pub(super) fn any_unreliable(_paths: &[String]) -> bool {
+    true
 }

@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, HashSet};
 use std::ffi::OsString;
 use std::io;
+#[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use std::process::{ExitStatus, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -11,7 +12,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use eukhe_chord::context::Context;
+#[cfg(unix)]
 use nix::sys::signal::{kill, killpg, Signal};
+#[cfg(unix)]
 use nix::unistd::Pid;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
 use tokio::time::Instant;
@@ -112,6 +115,7 @@ async fn path_exists(path: &str) -> bool {
 }
 
 /// Kill a command's process group, or the process when it has none.
+#[cfg(unix)]
 pub(super) fn kill_process_tree(pid: u32) {
     let Ok(pid) = i32::try_from(pid) else {
         return;
@@ -121,6 +125,13 @@ pub(super) fn kill_process_tree(pid: u32) {
         // Process already dead when this fails too.
         let _ = kill(pid, Signal::SIGKILL);
     }
+}
+
+/// Kill a command's process tree (`taskkill /T /F`); a tree already gone
+/// has nothing left to kill.
+#[cfg(windows)]
+pub(super) fn kill_process_tree(pid: u32) {
+    let _ = eukhe_types::platform::process::kill_process_tree(pid);
 }
 
 /// `runCommand`: stdout and exit status of a helper command, killed after
@@ -165,6 +176,7 @@ async fn run_command(command: &str, args: &[&str], timeout: Duration) -> (String
     }
 }
 
+#[cfg(unix)]
 async fn find_bash_on_path() -> Option<String> {
     let (stdout, status) = run_command("which", &["bash"], Duration::from_millis(5000)).await;
     if status != Some(0) || stdout.is_empty() {
@@ -228,6 +240,13 @@ async fn shell_config(custom_shell_path: Option<&str>) -> Result<ShellConfig, Ex
             format!("Custom shell path not found: {custom}"),
         ));
     }
+    default_shell_config().await
+}
+
+/// The shell without a custom path: `/bin/bash`, a `bash` on `PATH`, or
+/// `sh`.
+#[cfg(unix)]
+async fn default_shell_config() -> Result<ShellConfig, ExecutionError> {
     if path_exists("/bin/bash").await {
         return Ok(bash_shell_config("/bin/bash".to_owned()));
     }
@@ -239,6 +258,35 @@ async fn shell_config(custom_shell_path: Option<&str>) -> Result<ShellConfig, Ex
         args: vec!["-c".to_owned()],
         transport: CommandTransport::Argv,
     })
+}
+
+/// The shell without a custom path on Windows: Git Bash under
+/// `%ProgramFiles%` (or `%ProgramFiles(x86)%`), else the first
+/// `bash.exe` `where` finds; the legacy WSL launcher in System32 reads
+/// its script from stdin.
+#[cfg(windows)]
+async fn default_shell_config() -> Result<ShellConfig, ExecutionError> {
+    for root in ["ProgramFiles", "ProgramFiles(x86)"] {
+        let Some(root) = std::env::var_os(root) else {
+            continue;
+        };
+        let bash = std::path::Path::new(&root).join(r"Git\bin\bash.exe");
+        let bash = bash.to_string_lossy().into_owned();
+        if path_exists(&bash).await {
+            return Ok(bash_shell_config(bash));
+        }
+    }
+    let (stdout, status) = run_command("where", &["bash.exe"], Duration::from_millis(5000)).await;
+    let found = (status == Some(0))
+        .then(|| stdout.lines().map(str::trim).find(|line| !line.is_empty()))
+        .flatten();
+    match found {
+        Some(bash) if path_exists(bash).await => Ok(bash_shell_config(bash.to_owned())),
+        Some(_) | None => Err(ExecutionError::new(
+            ExecutionErrorCode::ShellUnavailable,
+            "No bash shell found: install Git for Windows (Git Bash) or set a shell path",
+        )),
+    }
 }
 
 /// `getShellEnv`: the process environment, then the environment's variables,
@@ -469,10 +517,17 @@ impl Drop for Settle {
 /// The exit code of a finished command: a process killed by a signal (e.g.
 /// the OOM killer) has no exit code; map it to the conventional 128 + signal
 /// number so callers do not mistake it for a successful exit.
+#[cfg(unix)]
 fn exit_code(status: ExitStatus) -> i32 {
     status
         .code()
         .unwrap_or_else(|| status.signal().map_or(1, |signal| 128 + signal))
+}
+
+/// The exit code of a finished command; Windows always reports one.
+#[cfg(windows)]
+fn exit_code(status: ExitStatus) -> i32 {
+    status.code().unwrap_or(1)
 }
 
 /// What to spawn: program, arguments, and the command a shell reads from
@@ -515,7 +570,15 @@ fn spawn_command(
     args: &[String],
     stdin: Stdio,
 ) -> Result<(tokio::process::Child, u32), ExecutionError> {
-    let child = tokio::process::Command::new(program)
+    let mut command = tokio::process::Command::new(program);
+    // Its own process group, so a kill reaches every descendant (Windows:
+    // the kill ends the tree; the new group keeps the console's Ctrl+C
+    // away).
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(windows)]
+    command.creation_flags(eukhe_types::platform::process::CREATE_NEW_PROCESS_GROUP);
+    let child = command
         .args(args)
         .current_dir(cwd)
         .env_clear()
@@ -527,8 +590,6 @@ fn spawn_command(
         .stdin(stdin)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        // Its own process group, so a kill reaches every descendant.
-        .process_group(0)
         .spawn()
         .map_err(|error| {
             let message = format!("spawn {program} {}", uv_code(&error));

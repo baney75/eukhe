@@ -19,6 +19,7 @@ use crate::env::{
 
 type Changes = Arc<Mutex<Vec<WatchChange>>>;
 
+#[cfg(unix)]
 fn native() -> NativeWatchOptions {
     NativeWatchOptions {
         mode: Some(WatchMode::Native),
@@ -296,6 +297,7 @@ async fn stops_reporting_once_closed(options: NativeWatchOptions) {
     assert!(snapshot(&changes).is_empty());
 }
 
+#[cfg(unix)]
 async fn reports_changes_to_the_file_a_target_links_to(options: NativeWatchOptions) {
     let root = Root::new();
     root.write("real/AGENTS.md", "one");
@@ -349,10 +351,14 @@ async fn keeps_watching_after_a_callback_panics(options: NativeWatchOptions) {
     watcher.close(&BACKGROUND_CONTEXT).await;
 }
 
+// Windows has no native backend (`polling.rs`): the native-mode cases are
+// Unix only.
 macro_rules! in_both_modes {
-    ($($scenario:ident),* $(,)?) => {
+    ($($(#[$only:meta])* $scenario:ident),* $(,)?) => {
+        #[cfg(unix)]
         mod native_mode {
             $(
+                $(#[$only])*
                 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
                 async fn $scenario() {
                     super::$scenario(super::native()).await;
@@ -362,6 +368,7 @@ macro_rules! in_both_modes {
 
         mod polling_mode {
             $(
+                $(#[$only])*
                 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
                 async fn $scenario() {
                     super::$scenario(super::polling()).await;
@@ -380,6 +387,7 @@ in_both_modes!(
     keeps_recursive_coverage_where_a_non_recursive_target_overlaps,
     follows_a_directory_replaced_at_the_same_path,
     stops_reporting_once_closed,
+    #[cfg(unix)]
     reports_changes_to_the_file_a_target_links_to,
     keeps_watching_after_a_callback_panics,
 );
@@ -434,6 +442,7 @@ async fn refuses_a_tree_over_the_directory_budget_and_stops_with_an_error_when_o
 
 /// An unreadable target directory fails `open` with node.ts `toFileError` of
 /// Node's `scandir` error.
+#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refuses_an_unreadable_target_directory() {
     use std::os::unix::fs::PermissionsExt;
