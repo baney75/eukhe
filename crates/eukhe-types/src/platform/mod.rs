@@ -14,6 +14,7 @@ pub mod endpoints;
 pub mod group_journal;
 pub mod identity;
 pub mod kill_point;
+pub mod mode;
 pub mod process;
 pub mod terminal;
 pub mod transport;
