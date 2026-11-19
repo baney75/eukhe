@@ -19,12 +19,16 @@
 //! - Node's watcher `'error'` event is never emitted for inotify or kqueue
 //!   handles (libuv reports no error status for them), so its handler has no
 //!   counterpart.
+//! - Windows has no native backend here (`native_watch/polling.rs`): every
+//!   watcher there compares snapshots.
 
 #[cfg(target_os = "linux")]
 mod inotify;
 #[cfg(target_os = "macos")]
 mod kqueue;
 mod paths;
+#[cfg(windows)]
+mod polling;
 mod scan;
 #[cfg(test)]
 mod tests;
@@ -46,12 +50,14 @@ use self::inotify::Backend;
 #[cfg(target_os = "macos")]
 use self::kqueue::Backend;
 use self::paths::{ancestors_of, compare_utf16, components_below, is_within, join};
+#[cfg(windows)]
+use self::polling::Backend;
 use self::scan::{EntryKind, ResolvedTarget, ScanError, Snapshot};
 use super::node_error::uv_code;
 use super::{FileError, FileWatcher, OnWatchChange, WatchChange, WatchMode, WatchTarget};
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
-compile_error!("native watching supports Linux (inotify) and macOS (kqueue) only");
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+compile_error!("native watching supports Linux (inotify), macOS (kqueue) and Windows (snapshots)");
 
 const DEBOUNCE: Duration = Duration::from_millis(50);
 const DEFAULT_POLL_MS: u64 = 2000;
@@ -90,6 +96,10 @@ enum Listener {
 }
 
 /// What a [`Backend`] reads.
+#[cfg_attr(
+    windows,
+    expect(dead_code, reason = "no native backend reads notices on Windows")
+)]
 enum Notice {
     /// A native watch fired; `filename` is the name libuv would report, if
     /// any.

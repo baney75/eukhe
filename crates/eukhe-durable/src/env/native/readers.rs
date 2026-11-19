@@ -3,7 +3,10 @@
 
 use std::fs::{File, ReadDir};
 use std::io;
+#[cfg(unix)]
 use std::os::unix::fs::FileExt;
+#[cfg(windows)]
+use std::os::windows::fs::FileExt;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use eukhe_chord::context::Context;
@@ -37,7 +40,13 @@ async fn read_at(file: Arc<File>, offset: u64, length: usize) -> io::Result<Vec<
     blocking(move || {
         let mut buffer = vec![0; length];
         let read = loop {
-            match file.read_at(&mut buffer, offset) {
+            // Windows: `seek_read` reads at the offset too (it moves the
+            // file's cursor, which no reader here uses).
+            #[cfg(unix)]
+            let read = file.read_at(&mut buffer, offset);
+            #[cfg(windows)]
+            let read = file.seek_read(&mut buffer, offset);
+            match read {
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
                 result => break result?,
             }

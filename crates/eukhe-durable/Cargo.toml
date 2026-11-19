@@ -26,9 +26,6 @@ tokio-util.workspace = true
 # harness/generation: the provider token count's fallback to the local
 # count is logged. MIT.
 tracing.workspace = true
-# env/native: process-group kill, statfs magic, inotify (Linux) and kqueue
-# (macOS) watches through safe wrappers (rustix's kevent is unsafe). MIT.
-nix = { version = "0.29", features = ["signal", "fs", "inotify", "event"] }
 # env/native: `file://` path arguments, like Node's `fileURLToPath`. MIT OR Apache-2.0.
 url = "2"
 percent-encoding = "2"
@@ -47,6 +44,11 @@ rquickjs = "0.14"
 # codemode/output: decode `image()` data to save it (TS `atob`). Already in the
 # graph through eukhe-ai. MIT OR Apache-2.0.
 base64 = "0.22"
+
+[target.'cfg(unix)'.dependencies]
+# env/native: process-group kill, statfs magic, inotify (Linux) and kqueue
+# (macOS) watches through safe wrappers (rustix's kevent is unsafe). MIT.
+nix = { version = "0.29", features = ["signal", "fs", "inotify", "event"] }
 
 [features]
 # `eukhe_durable::testing`: the storage and environment conformance suites

@@ -83,6 +83,7 @@ pub(super) fn components_below<'a>(ancestor: &str, path: &'a str) -> Vec<&'a str
 }
 
 /// libuv's `uv__basename_r`: what follows the last `/`, or the whole path.
+#[cfg(unix)]
 pub(super) fn basename(path: &str) -> &str {
     path.rfind('/').map_or(path, |index| &path[index + 1..])
 }

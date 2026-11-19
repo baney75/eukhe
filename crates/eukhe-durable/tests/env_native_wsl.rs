@@ -1,6 +1,8 @@
 //! `uses stdin command transport for legacy WSL bash paths` of
 //! `test/env-node.test.ts`. It changes the process's working directory and
 //! `PATH`, so it runs alone in its own test binary.
+// The fake WSL bash is a shell script made executable by its mode: Unix only.
+#![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;
 

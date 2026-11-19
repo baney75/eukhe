@@ -5,12 +5,14 @@
 use std::io;
 use std::sync::Arc;
 
+#[cfg(unix)]
 use nix::errno::Errno;
 
 use super::{FileError, FileErrorCode};
 
 /// libuv's name and description of an OS error, as Node formats it
 /// (`uv_err_name`, `uv_strerror`).
+#[cfg(unix)]
 pub(crate) fn uv_error_name(error: &io::Error) -> (&'static str, &'static str) {
     let Some(raw) = error.raw_os_error() else {
         return ("UNKNOWN", "unknown error");
@@ -54,6 +56,42 @@ pub(crate) fn uv_error_name(error: &io::Error) -> (&'static str, &'static str) {
         Errno::ETXTBSY => ("ETXTBSY", "text file is busy"),
         Errno::EXDEV => ("EXDEV", "cross-device link not permitted"),
         _ => ("UNKNOWN", "unknown error"),
+    }
+}
+
+/// `ERROR_CANT_RESOLVE_FILENAME`, which libuv reads as ELOOP.
+#[cfg(windows)]
+pub(crate) const ERROR_CANT_RESOLVE_FILENAME: i32 = 1921;
+
+/// libuv's name and description of a Windows error, as Node formats it:
+/// the Win32 code through libuv's `uv_translate_sys_error` table (the
+/// codes file calls meet), then `uv_err_name`, `uv_strerror`.
+#[cfg(windows)]
+pub(crate) fn uv_error_name(error: &io::Error) -> (&'static str, &'static str) {
+    match error.raw_os_error() {
+        Some(1) => ("EISDIR", "illegal operation on a directory"),
+        Some(2 | 3 | 123 | 161) => ("ENOENT", "no such file or directory"),
+        Some(4) => ("EMFILE", "too many open files"),
+        Some(5) => ("EPERM", "operation not permitted"),
+        Some(6) => ("EBADF", "bad file descriptor"),
+        Some(8 | 14) => ("ENOMEM", "not enough memory"),
+        Some(17) => ("EXDEV", "cross-device link not permitted"),
+        Some(19) => ("EROFS", "read-only file system"),
+        Some(32 | 33) => ("EBUSY", "resource busy or locked"),
+        Some(39 | 112) => ("ENOSPC", "no space left on device"),
+        Some(50) => ("ENOTSUP", "operation not supported on socket"),
+        Some(80 | 183) => ("EEXIST", "file already exists"),
+        Some(87) => ("EINVAL", "invalid argument"),
+        Some(109) => ("EOF", "end of file"),
+        Some(121) => ("ETIMEDOUT", "connection timed out"),
+        Some(145) => ("ENOTEMPTY", "directory not empty"),
+        Some(206) => ("ENAMETOOLONG", "name too long"),
+        Some(232) => ("EPIPE", "broken pipe"),
+        Some(267) => ("ENOTDIR", "not a directory"),
+        Some(995) => ("ECANCELED", "operation canceled"),
+        Some(998 | 1920) => ("EACCES", "permission denied"),
+        Some(ERROR_CANT_RESOLVE_FILENAME) => ("ELOOP", "too many symbolic links encountered"),
+        Some(_) | None => ("UNKNOWN", "unknown error"),
     }
 }
 

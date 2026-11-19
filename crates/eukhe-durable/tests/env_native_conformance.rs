@@ -183,6 +183,7 @@ async fn reads_ranges_spanning_several_internal_chunks_exactly() {
     reader.close(cx()).await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn refuses_a_fifo_without_waiting_for_a_writer() {
     let (_dir, cwd) = temp_dir("pi-durable-env-readers-");
