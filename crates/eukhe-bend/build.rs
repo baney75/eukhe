@@ -16,8 +16,8 @@ fn main() {
     // The emitted C jumps between its segments with `__attribute__((musttail))
     // return`: clang compiles it (Bend asks for clang 14+), GCC only from 15
     // (GCC 11, Ubuntu 22.04's cc, rejects it). A cc that cannot, unless CC
-    // names it, gives way to `clang`. On Windows it is always clang: cl.exe
-    // takes neither musttail nor GNU C.
+    // names it, gives way to `clang`. On Windows it is clang, or the one CC
+    // names: cl.exe takes neither musttail nor GNU C.
     if !windows && !musttail() && !explicit_cc() {
         build.compiler("clang");
     }
@@ -34,8 +34,13 @@ fn windows_compat(build: &mut cc::Build) {
     let static_crt = std::env::var("CARGO_CFG_TARGET_FEATURE")
         .is_ok_and(|features| features.split(',').any(|feature| feature == "crt-static"));
     let runtime = if static_crt { "static" } else { "dll" };
+    // clang, or the one CC names (a clang off PATH).
+    if !explicit_cc() {
+        build.compiler("clang");
+    }
     build
-        .compiler("clang")
+        // The compat's own check of its lazy mappings (src/ffi.rs tests).
+        .file("c/win32/selftest.c")
         .include("c/win32")
         // The UCRT declares read, write and the rest without their leading
         // underscore only for this (clang leaves __STDC__ undefined there).

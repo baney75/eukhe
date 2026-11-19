@@ -4,13 +4,17 @@
 // the 8 GiB corpus and the 2 GiB machine stacks need. Windows commits no
 // page on touch by itself, so a vectored exception handler does: an access
 // violation inside one of these reservations, on a page still reserved,
-// commits the 1 MiB around it read-write (the protection core.c maps with)
-// and resumes the faulting access. A commit the system refuses is out of
-// memory, which ends the process as a refused overcommit does on Linux.
+// commits the 1 MiB around it with the mapping's protection and resumes
+// the faulting access. A commit the system refuses is out of memory, which
+// ends the process as a refused overcommit does on Linux. A PROT_NONE lazy
+// mapping commits nothing: a touch of it is a fault.
 //
-// mprotect(PROT_NONE) commits its pages no-access: a guard. An access
-// violation on a committed page of a reservation (a guard hit, above all
-// the machine stack's) runs the SIGSEGV handler sigaction recorded
+// mprotect(PROT_NONE) commits its pages no-access: a guard. mprotect of a
+// lazy mapping to another protection leaves its pages reserved and sets
+// the protection the rest of it commits with on touch (one per mapping:
+// the last asked), and changes the pages already committed. An access
+// violation the mapping's protection does not allow (a guard hit, above
+// all the machine stack's) runs the SIGSEGV handler sigaction recorded
 // (c/win32/signal.h), core.c's err_trap, which reports the fault and ends
 // the process; with none recorded the fault goes on to the default crash.
 // Faults outside these reservations are not this handler's.
@@ -44,29 +48,35 @@
 #define MAP_NORESERVE 0x4000
 #define MAP_FAILED    ((void*)-1)
 
-// The reservations' bases (0: a free slot). core.c maps a handful: the
-// corpus and its doublings, a machine stack per lane.
-#define EB_W32_MAPS 64
+// The mappings: their bases (0: a free slot) and, for a lazy one, the
+// protection its pages commit with on touch (EB_W32_EAGER: committed at
+// once). core.c maps a handful: the corpus and its doublings, a machine
+// stack per lane.
+#define EB_W32_MAPS  64
+#define EB_W32_EAGER (-1)
 
 static _Atomic uintptr_t eb_w32_maps[EB_W32_MAPS];
+static _Atomic int       eb_w32_map_prot[EB_W32_MAPS];
 static atomic_flag       eb_w32_fault_handler_added = ATOMIC_FLAG_INIT;
 
 // The commit-on-touch step.
 #define EB_W32_COMMIT_CHUNK ((uintptr_t)1 << 20)
 
-static inline bool eb_w32_is_map(const void* base) {
-  for (size_t i = 0; i < EB_W32_MAPS; i += 1) {
+// The slot of the mapping at `base`, or -1.
+static inline int eb_w32_map_slot(const void* base) {
+  for (int i = 0; i < EB_W32_MAPS; i += 1) {
     if (base != NULL && atomic_load(&eb_w32_maps[i]) == (uintptr_t)base) {
-      return true;
+      return i;
     }
   }
-  return false;
+  return -1;
 }
 
-static inline bool eb_w32_map_add(void* base) {
-  for (size_t i = 0; i < EB_W32_MAPS; i += 1) {
+static inline bool eb_w32_map_add(void* base, int prot) {
+  for (int i = 0; i < EB_W32_MAPS; i += 1) {
     uintptr_t free_slot = 0;
     if (atomic_compare_exchange_strong(&eb_w32_maps[i], &free_slot, (uintptr_t)base)) {
+      atomic_store(&eb_w32_map_prot[i], prot);
       return true;
     }
   }
@@ -74,7 +84,7 @@ static inline bool eb_w32_map_add(void* base) {
 }
 
 static inline bool eb_w32_map_drop(void* base) {
-  for (size_t i = 0; i < EB_W32_MAPS; i += 1) {
+  for (int i = 0; i < EB_W32_MAPS; i += 1) {
     uintptr_t at = (uintptr_t)base;
     if (atomic_compare_exchange_strong(&eb_w32_maps[i], &at, 0)) {
       return true;
@@ -83,48 +93,80 @@ static inline bool eb_w32_map_drop(void* base) {
   return false;
 }
 
+static inline uint32_t eb_w32_page_protection(int prot) {
+  return prot == PROT_NONE ? EB_W32_PAGE_NOACCESS
+    : (prot & PROT_EXEC) != 0 ? EB_W32_PAGE_EXECUTE_READWRITE
+    : (prot & PROT_WRITE) != 0 ? EB_W32_PAGE_READWRITE
+    : EB_W32_PAGE_READONLY;
+}
+
+// Whether a committed page of protection `page` allows the access `kind`
+// (an access violation's information[0]: 0 read, 1 write, 8 execute).
+static inline bool eb_w32_page_allows(uint32_t page, uintptr_t kind) {
+  bool writes = page == EB_W32_PAGE_READWRITE || page == EB_W32_PAGE_EXECUTE_READWRITE;
+  bool reads  = writes || page == EB_W32_PAGE_READONLY;
+  return kind == 0 ? reads : kind == 1 ? writes : page == EB_W32_PAGE_EXECUTE_READWRITE;
+}
+
+// What an access violation at `at` (of access `kind`) comes to.
+typedef enum {
+  EB_W32_NOT_OURS,    // outside these mappings
+  EB_W32_COMMITTED,   // a reserved page of a lazy mapping, now committed
+  EB_W32_ALLOWED,     // another thread committed it in between: retry
+  EB_W32_TRAP,        // a fault the mapping's protection does not allow
+} eb_w32_fault_step;
+
+static inline eb_w32_fault_step eb_w32_fault_at(uintptr_t at, uintptr_t kind) {
+  eb_w32_memory_info info = { 0 };
+  if (VirtualQuery((const void*)at, &info, sizeof info) != sizeof info) {
+    return EB_W32_NOT_OURS;
+  }
+  int slot = eb_w32_map_slot(info.allocation_base);
+  if (slot < 0) {
+    return EB_W32_NOT_OURS;
+  }
+  if (info.state != EB_W32_MEM_RESERVE) {
+    return eb_w32_page_allows(info.protect, kind) ? EB_W32_ALLOWED : EB_W32_TRAP;
+  }
+  int prot = atomic_load(&eb_w32_map_prot[slot]);
+  if (prot == EB_W32_EAGER || prot == PROT_NONE
+    || !eb_w32_page_allows(eb_w32_page_protection(prot), kind)) {
+    return EB_W32_TRAP;
+  }
+  uintptr_t lo   = (uintptr_t)info.base;
+  uintptr_t hi   = lo + info.region_size;
+  uintptr_t from = at & ~(EB_W32_COMMIT_CHUNK - 1);
+  uintptr_t to   = from + EB_W32_COMMIT_CHUNK;
+  from = from < lo ? lo : from;
+  to   = to > hi ? hi : to;
+  if (VirtualAlloc((void*)from, to - from, EB_W32_MEM_COMMIT, eb_w32_page_protection(prot))
+    == NULL) {
+    static const char line[] = "bend: out of memory (the system refused a commit)\n";
+    if (write(2, line, sizeof line - 1)) {}
+    _exit(1);
+  }
+  return EB_W32_COMMITTED;
+}
+
 static long __stdcall eb_w32_fault(eb_w32_exception_pointers* fault) {
   eb_w32_exception_record* record = fault->record;
   if (record->code != EB_W32_EXCEPTION_ACCESS_VIOLATION || record->parameters < 2) {
     return EB_W32_EXCEPTION_CONTINUE_SEARCH;
   }
-  // information[0]: 0 read, 1 write, 8 execute; information[1]: the address.
-  uintptr_t      at   = record->information[1];
-  eb_w32_memory_info info = { 0 };
-  if (VirtualQuery((const void*)at, &info, sizeof info) != sizeof info
-    || !eb_w32_is_map(info.allocation_base)) {
-    return EB_W32_EXCEPTION_CONTINUE_SEARCH;
-  }
-  if (info.state == EB_W32_MEM_RESERVE) {
-    uintptr_t lo  = (uintptr_t)info.base;
-    uintptr_t hi  = lo + info.region_size;
-    uintptr_t from = at & ~(EB_W32_COMMIT_CHUNK - 1);
-    uintptr_t to   = from + EB_W32_COMMIT_CHUNK;
-    from = from < lo ? lo : from;
-    to   = to > hi ? hi : to;
-    if (VirtualAlloc((void*)from, to - from, EB_W32_MEM_COMMIT, EB_W32_PAGE_READWRITE) == NULL) {
-      static const char line[] = "bend: out of memory (the system refused a commit)\n";
-      if (write(2, line, sizeof line - 1)) {}
-      _exit(1);
-    }
-    return EB_W32_EXCEPTION_CONTINUE_EXECUTION;
-  }
-  if (info.protect == EB_W32_PAGE_READWRITE && record->information[0] != 8) {
-    // Another thread committed the page between the fault and the query.
-    return EB_W32_EXCEPTION_CONTINUE_EXECUTION;
+  switch (eb_w32_fault_at(record->information[1], record->information[0])) {
+    case EB_W32_NOT_OURS:
+      return EB_W32_EXCEPTION_CONTINUE_SEARCH;
+    case EB_W32_COMMITTED:
+    case EB_W32_ALLOWED:
+      return EB_W32_EXCEPTION_CONTINUE_EXECUTION;
+    case EB_W32_TRAP:
+      break;
   }
   void (*trap)(int) = eb_w32_trap_handler(SIGSEGV);
   if (trap != NULL) {
     trap(SIGSEGV);
   }
   return EB_W32_EXCEPTION_CONTINUE_SEARCH;
-}
-
-static inline uint32_t eb_w32_page_protection(int prot) {
-  return prot == PROT_NONE ? EB_W32_PAGE_NOACCESS
-    : (prot & PROT_EXEC) != 0 ? EB_W32_PAGE_EXECUTE_READWRITE
-    : (prot & PROT_WRITE) != 0 ? EB_W32_PAGE_READWRITE
-    : EB_W32_PAGE_READONLY;
 }
 
 static inline void* mmap(void* at, size_t size, int prot, int flags, int fd, intptr_t off) {
@@ -139,12 +181,13 @@ static inline void* mmap(void* at, size_t size, int prot, int flags, int fd, int
   }
   bool     lazy = (flags & MAP_NORESERVE) != 0;
   uint32_t type = lazy ? EB_W32_MEM_RESERVE : EB_W32_MEM_RESERVE | EB_W32_MEM_COMMIT;
-  void*    p    = VirtualAlloc(at, size, type, lazy ? EB_W32_PAGE_NOACCESS : eb_w32_page_protection(prot));
+  void*    p    = VirtualAlloc(at, size, type,
+    lazy ? EB_W32_PAGE_NOACCESS : eb_w32_page_protection(prot));
   if (p == NULL) {
     errno = ENOMEM;
     return MAP_FAILED;
   }
-  if (!eb_w32_map_add(p)) {
+  if (!eb_w32_map_add(p, lazy ? prot : EB_W32_EAGER)) {
     VirtualFree(p, 0, EB_W32_MEM_RELEASE);
     errno = ENOMEM;
     return MAP_FAILED;
@@ -164,9 +207,40 @@ static inline int munmap(void* at, size_t size) {
   return VirtualFree(at, 0, EB_W32_MEM_RELEASE) ? 0 : (errno = EINVAL, -1);
 }
 
+// Set the committed pages of [at, at + size) to `page`; reserved ones stay.
+static inline bool eb_w32_protect_committed(char* at, size_t size, uint32_t page) {
+  char* end = at + size;
+  while (at < end) {
+    eb_w32_memory_info info = { 0 };
+    if (VirtualQuery(at, &info, sizeof info) != sizeof info) {
+      return false;
+    }
+    char*    next = (char*)info.base + info.region_size;
+    size_t   run  = (size_t)((next < end ? next : end) - at);
+    uint32_t old  = 0;
+    if (info.state == EB_W32_MEM_COMMIT && !VirtualProtect(at, run, page, &old)) {
+      return false;
+    }
+    at = next;
+  }
+  return true;
+}
+
 static inline int mprotect(void* at, size_t size, int prot) {
-  uint32_t page = eb_w32_page_protection(prot);
-  uint32_t old  = 0;
+  uint32_t           page = eb_w32_page_protection(prot);
+  uint32_t           old  = 0;
+  eb_w32_memory_info info = { 0 };
+  int slot = VirtualQuery(at, &info, sizeof info) == sizeof info
+    ? eb_w32_map_slot(info.allocation_base) : -1;
+  bool lazy = slot >= 0 && atomic_load(&eb_w32_map_prot[slot]) != EB_W32_EAGER;
+  if (lazy && prot != PROT_NONE) {
+    atomic_store(&eb_w32_map_prot[slot], prot);
+    if (!eb_w32_protect_committed(at, size, page)) {
+      errno = ENOMEM;
+      return -1;
+    }
+    return 0;
+  }
   if (VirtualAlloc(at, size, EB_W32_MEM_COMMIT, page) == NULL
     || !VirtualProtect(at, size, page, &old)) {
     errno = ENOMEM;

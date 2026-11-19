@@ -118,3 +118,21 @@ pub(crate) fn close(handle: u64) {
     // SAFETY: the shim checks `handle`; nothing is borrowed.
     unsafe { eukhe_bend_close(handle) };
 }
+
+/// The Windows compat's lazy mappings (`c/win32/selftest.c`).
+#[cfg(all(test, windows))]
+mod win32_tests {
+    extern "C" {
+        fn eukhe_bend_win32_selftest() -> i32;
+    }
+
+    /// A lazy mapping commits with the protection it asked for, a
+    /// `PROT_NONE` one and a guard are faults, and `mprotect` of a lazy
+    /// mapping leaves it reserved (0: every check held).
+    #[test]
+    fn lazy_mappings_keep_their_protection() {
+        // SAFETY: the check takes nothing and maps and frees only its own
+        // memory.
+        assert_eq!(unsafe { eukhe_bend_win32_selftest() }, 0);
+    }
+}
