@@ -22,9 +22,65 @@
 //! strand its signal (tokio keeps the replacement disposition installed
 //! after the listener is gone, so a dropped stream swallows every later
 //! delivery).
+//!
+//! On Windows the pair is Ctrl+Break (the terminate a console sends a
+//! process group, `GenerateConsoleCtrlEvent`) and Ctrl+C. A daemon started
+//! in its own process group ignores Ctrl+C from the launcher's console, so
+//! the usual stop there is the `shutdown` request.
 
 use std::sync::Arc;
-use tokio::signal::unix::{signal, Signal, SignalKind};
+#[cfg(unix)]
+use tokio::signal::unix::{signal, SignalKind};
+
+/// The terminate handler (SIGTERM; Windows: Ctrl+Break).
+#[cfg(unix)]
+fn terminate_handler() -> std::io::Result<tokio::signal::unix::Signal> {
+    signal(SignalKind::terminate())
+}
+
+/// The interrupt handler (SIGINT; Windows: Ctrl+C).
+#[cfg(unix)]
+fn interrupt_handler() -> std::io::Result<tokio::signal::unix::Signal> {
+    signal(SignalKind::interrupt())
+}
+
+/// The terminate handler (SIGTERM; Windows: Ctrl+Break).
+#[cfg(windows)]
+fn terminate_handler() -> std::io::Result<tokio::signal::windows::CtrlBreak> {
+    tokio::signal::windows::ctrl_break()
+}
+
+/// The interrupt handler (SIGINT; Windows: Ctrl+C).
+#[cfg(windows)]
+fn interrupt_handler() -> std::io::Result<tokio::signal::windows::CtrlC> {
+    tokio::signal::windows::ctrl_c()
+}
+
+/// A signal stream: one wait per delivery.
+trait Delivery {
+    async fn delivered(&mut self);
+}
+
+#[cfg(unix)]
+impl Delivery for tokio::signal::unix::Signal {
+    async fn delivered(&mut self) {
+        let _ = self.recv().await;
+    }
+}
+
+#[cfg(windows)]
+impl Delivery for tokio::signal::windows::CtrlBreak {
+    async fn delivered(&mut self) {
+        let _ = self.recv().await;
+    }
+}
+
+#[cfg(windows)]
+impl Delivery for tokio::signal::windows::CtrlC {
+    async fn delivered(&mut self) {
+        let _ = self.recv().await;
+    }
+}
 
 use crate::supervisor::Supervisor;
 
@@ -33,7 +89,7 @@ use crate::supervisor::Supervisor;
 /// immediately when neither handler could register: with no listener, the
 /// signals keep their default disposition.
 pub(crate) fn install(supervisor: Arc<Supervisor>) -> impl std::future::Future<Output = ()> + Send {
-    let mut terminate = match signal(SignalKind::terminate()) {
+    let mut terminate = match terminate_handler() {
         Ok(terminate) => Some(terminate),
         Err(error) => {
             supervisor.log_line(&format!(
@@ -42,7 +98,7 @@ pub(crate) fn install(supervisor: Arc<Supervisor>) -> impl std::future::Future<O
             None
         }
     };
-    let mut interrupt = match signal(SignalKind::interrupt()) {
+    let mut interrupt = match interrupt_handler() {
         Ok(interrupt) => Some(interrupt),
         Err(error) => {
             supervisor.log_line(&format!(
@@ -73,11 +129,9 @@ pub(crate) fn install(supervisor: Arc<Supervisor>) -> impl std::future::Future<O
 
 /// Wait on one optional signal stream: an absent stream (a registration
 /// failure) parks forever instead of spinning the loop.
-async fn recv_opt(stream: Option<&mut Signal>) {
+async fn recv_opt(stream: Option<&mut impl Delivery>) {
     match stream {
-        Some(stream) => {
-            let _ = stream.recv().await;
-        }
+        Some(stream) => stream.delivered().await,
         None => std::future::pending::<()>().await,
     }
 }

@@ -18,7 +18,6 @@ use eukhe_types::daemon::{
 };
 use eukhe_types::session::AgentMessage;
 use serde_json::{json, Map, Value};
-use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::{mpsc, watch};
 
 use crate::answer::{answer, Answer};
@@ -125,6 +124,44 @@ pub(crate) struct Gateway<L> {
     staged: Option<watch::Receiver<Option<String>>>,
 }
 
+/// Install the stop handlers (SIGINT and SIGTERM) and return the wait for
+/// the first, which answers the signal's name.
+///
+/// # Errors
+///
+/// A handler cannot be installed.
+#[cfg(unix)]
+fn stop_signal() -> anyhow::Result<impl std::future::Future<Output = &'static str>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut interrupt = signal(SignalKind::interrupt()).context("install the SIGINT handler")?;
+    let mut terminate = signal(SignalKind::terminate()).context("install the SIGTERM handler")?;
+    Ok(async move {
+        tokio::select! {
+            _ = interrupt.recv() => "SIGINT",
+            _ = terminate.recv() => "SIGTERM",
+        }
+    })
+}
+
+/// Install the stop handlers (Ctrl+C and Ctrl+Break, the console's pair)
+/// and return the wait for the first, which answers its name.
+///
+/// # Errors
+///
+/// A handler cannot be installed.
+#[cfg(windows)]
+fn stop_signal() -> anyhow::Result<impl std::future::Future<Output = &'static str>> {
+    let mut interrupt = tokio::signal::windows::ctrl_c().context("install the Ctrl+C handler")?;
+    let mut terminate =
+        tokio::signal::windows::ctrl_break().context("install the Ctrl+Break handler")?;
+    Ok(async move {
+        tokio::select! {
+            _ = interrupt.recv() => "Ctrl+C",
+            _ = terminate.recv() => "Ctrl+Break",
+        }
+    })
+}
+
 impl<L: DaemonLauncher> Gateway<L> {
     /// Install the signal handlers, connect to the daemon, and start
     /// `signal-cli`. With `gateway.rootHeartbeat` set, open the root
@@ -142,16 +179,10 @@ impl<L: DaemonLauncher> Gateway<L> {
         settings: Arc<dyn ClientSettings>,
         restart: RestartSupport,
     ) -> anyhow::Result<Self> {
-        let mut interrupt =
-            signal(SignalKind::interrupt()).context("install the SIGINT handler")?;
-        let mut terminate =
-            signal(SignalKind::terminate()).context("install the SIGTERM handler")?;
+        let stopped = stop_signal()?;
         let (stop, shutdown) = watch::channel(false);
         tokio::spawn(async move {
-            let name = tokio::select! {
-                _ = interrupt.recv() => "SIGINT",
-                _ = terminate.recv() => "SIGTERM",
-            };
+            let name = stopped.await;
             tracing::info!(signal = name, "stopping the gateway");
             if stop.send(true).is_err() {
                 tracing::debug!("the gateway stopped first");
