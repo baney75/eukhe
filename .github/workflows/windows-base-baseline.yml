@@ -1,0 +1,29 @@
+# Fork-only baseline: the stage 2 test command on the base branch.
+name: windows-base-baseline
+on:
+  push:
+    branches: [windows/base-ci]
+permissions:
+  contents: read
+jobs:
+  baseline:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test
+      - uses: astral-sh/setup-uv@v6
+      - name: Baseline
+        env:
+          CC: clang
+        run: >-
+          cargo test --locked --no-fail-fast
+          -p eukhe-types -p eukhe-client -p eukhe-bend -p eukhe-daemon
+          -p eukhe-core -p eukhe-durable -p eukhe-shell
