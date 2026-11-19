@@ -743,6 +743,7 @@ fn total_cap_marks_the_file_count_as_a_lower_bound() {
     );
 }
 
+#[cfg(unix)]
 /// Excluded directories, symlinks, and eukhe temporary files: the first
 /// two get notices and are counted; temporary files are hidden.
 #[test]
@@ -793,10 +794,12 @@ fn walk_skips_are_counted_and_temporary_files_are_hidden() {
 
 /// Whether this process can read a file that has no permissions (root
 /// can, so the permission tests have nothing to check).
+#[cfg(unix)]
 fn reads_without_permission(path: &Path) -> bool {
     fs::read_dir(path).is_ok() || fs::read(path).is_ok()
 }
 
+#[cfg(unix)]
 /// An unreadable file and an unreadable directory are counted with a
 /// notice each, and the search goes on.
 #[test]

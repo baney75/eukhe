@@ -23,8 +23,6 @@
 
 use std::fs::{File, OpenOptions, Permissions};
 use std::io::Write as _;
-use std::os::unix::fs::OpenOptionsExt as _;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -401,9 +399,12 @@ fn write_synced(
 ) -> std::io::Result<File> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
+    // The mode applies at creation: no window where the bytes are
+    // readable under a wider mode. Windows has no creation mode; the
+    // permissions (its read-only flag) apply below.
+    #[cfg(unix)]
     if let Some(permissions) = &permissions {
-        // The mode applies at creation: no window where the bytes are
-        // readable under a wider mode.
+        use std::os::unix::fs::{OpenOptionsExt as _, PermissionsExt as _};
         options.mode(permissions.mode());
     }
     let mut file = options.open(path)?;

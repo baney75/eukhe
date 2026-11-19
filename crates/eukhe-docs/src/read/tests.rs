@@ -349,6 +349,7 @@ fn url_above_its_root_is_rejected_even_when_the_file_exists() {
     );
 }
 
+#[cfg(unix)]
 /// A symlink inside the root that points outside it is rejected: the real
 /// path must stay under the root's real path. A symlink that stays inside
 /// reads as usual.
