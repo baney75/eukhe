@@ -108,7 +108,6 @@ pub async fn prepare_socket_path(path: &Path) -> Result<()> {
 /// endpoint nothing serves (a path too long to name one,
 /// `eukhe_core::platform::endpoint`); the caller owns the cleanup lock.
 async fn prepare_locked_socket_path(path: &Path) -> Result<()> {
-    use std::os::unix::fs::FileTypeExt;
     let Ok(metadata) = std::fs::symlink_metadata(path) else {
         return Ok(());
     };
@@ -120,15 +119,11 @@ async fn prepare_locked_socket_path(path: &Path) -> Result<()> {
             .with_context(|| format!("remove the stale socket link {}", path.display()))?;
         return Ok(());
     }
-    if !metadata.file_type().is_socket() {
+    let Some(stale_identity) = endpoint_file_identity(path, &metadata) else {
         return Err(anyhow!(
             "Daemon socket path exists and is not a socket: {}",
             path.display()
         ));
-    }
-    let stale_identity = SocketIdentity {
-        dev: std::os::unix::fs::MetadataExt::dev(&metadata),
-        ino: std::os::unix::fs::MetadataExt::ino(&metadata),
     };
     if can_connect(path, Duration::from_millis(250)).await {
         return Err(anyhow!("Daemon socket already in use: {}", path.display()));
@@ -154,6 +149,26 @@ async fn prepare_locked_socket_path(path: &Path) -> Result<()> {
         }
     }
     unlink_stale_socket(path, stale_identity).await
+}
+
+/// The identity of the socket file `metadata` was read from: its dev and
+/// ino; `None` when it is no socket.
+#[cfg(unix)]
+fn endpoint_file_identity(path: &Path, metadata: &std::fs::Metadata) -> Option<SocketIdentity> {
+    use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _};
+    let _ = path;
+    metadata.file_type().is_socket().then(|| SocketIdentity {
+        dev: metadata.dev(),
+        ino: metadata.ino(),
+    })
+}
+
+/// The identity of the endpoint file at `path` (Windows): the random bits
+/// of the pipe it names; `None` when it names no pipe eukhe made.
+#[cfg(windows)]
+fn endpoint_file_identity(path: &Path, metadata: &std::fs::Metadata) -> Option<SocketIdentity> {
+    let _ = metadata;
+    socket_identity(path)
 }
 
 /// Final gate before unlinking a probed-stale socket file: refuse while a
@@ -229,7 +244,7 @@ pub fn cleanup_socket_path_after_close(path: &Path, expected_identity: Option<So
         cleanup_link_after_close(path, expected);
         return;
     }
-    if !path.exists() || !eukhe_types::platform::transport::unix_listener_definitely_closed(path) {
+    if !path.exists() || !eukhe_types::platform::transport::listener_definitely_closed(path) {
         return;
     }
     cleanup_socket_path(path, expected_identity);
@@ -291,7 +306,6 @@ pub async fn bind_capture_gap() {
 /// to a short endpoint (a path too long to name one) are unlinked, and
 /// only the inode that was probed dead. Returns how many were removed.
 pub(crate) async fn reap_stale_worker_sockets(supervisor_socket: &Path) -> usize {
-    use std::os::unix::fs::FileTypeExt;
     let dir = match supervisor_socket.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => parent,
         _ => Path::new("."),
@@ -319,9 +333,7 @@ pub(crate) async fn reap_stale_worker_sockets(supervisor_socket: &Path) -> usize
             continue;
         };
         let is_link = eukhe_types::platform::endpoints::is_endpoint_link(&endpoint);
-        let reapable = is_link
-            || std::fs::symlink_metadata(&endpoint)
-                .is_ok_and(|metadata| metadata.file_type().is_socket());
+        let reapable = is_link || eukhe_types::platform::endpoints::is_socket_file(&endpoint);
         let Some(probed) = socket_identity(&endpoint).filter(|_| reapable) else {
             continue;
         };

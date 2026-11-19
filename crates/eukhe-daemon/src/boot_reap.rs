@@ -370,7 +370,7 @@ async fn stop_target_within(
 /// the stopped session's descriptor and fails the stop.
 async fn signal_pinned(
     target: &ReapTarget,
-    pidfd: &std::os::fd::OwnedFd,
+    pidfd: &eukhe_core::platform::process::ProcessHandle,
     term_grace: Duration,
     kill_verify: Duration,
 ) -> ReapOutcome {
@@ -761,9 +761,17 @@ pub(crate) fn supervisor_argv_names_socket(argv: &[String], socket: &str) -> boo
 /// removes endpoints only - a regular file at a matching name is never
 /// touched). Unconditional on purpose: the std `os::unix` socket-file
 /// probe compiles on linux and macOS alike.
+#[cfg(unix)]
 pub(crate) fn is_unix_socket_file(path: &Path) -> bool {
     use std::os::unix::fs::FileTypeExt;
     std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_socket())
+}
+
+/// Whether the path is an endpoint file (Windows: a file naming a pipe
+/// eukhe made); a regular file at a matching name is never touched.
+#[cfg(windows)]
+pub(crate) fn is_unix_socket_file(path: &Path) -> bool {
+    eukhe_types::platform::endpoints::is_socket_file(path)
 }
 
 /// The pids the reap must never touch: the live-worker descriptors this

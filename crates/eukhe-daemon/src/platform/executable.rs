@@ -27,12 +27,21 @@ pub(crate) struct WorkerImage {
 
 impl WorkerImage {
     /// A command that executes this image with its argv[0].
+    #[cfg(unix)]
     pub(crate) fn command(&self) -> tokio::process::Command {
         let mut command = tokio::process::Command::new(&self.program);
         if let Some(arg0) = &self.arg0 {
             command.arg0(arg0);
         }
         command
+    }
+
+    /// A command that executes this image. Windows takes no argv[0] apart
+    /// from the program: listings name the program itself.
+    #[cfg(windows)]
+    pub(crate) fn command(&self) -> tokio::process::Command {
+        let _ = &self.arg0;
+        tokio::process::Command::new(&self.program)
     }
 }
 

@@ -327,7 +327,7 @@ pub(super) fn file_identity(path: &Path) -> Result<Option<FileIdentity>> {
     Ok(Some(FileIdentity {
         size: metadata.len(),
         mtime: metadata.modified().ok(),
-        ino: std::os::unix::fs::MetadataExt::ino(&metadata),
+        ino: eukhe_core::platform::stat::stat_fields(&metadata).ino,
     }))
 }
 

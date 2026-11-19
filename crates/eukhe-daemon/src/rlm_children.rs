@@ -520,7 +520,7 @@ fn move_legacy_workspace(old: &Path, new: &Path) -> std::io::Result<()> {
         Ok(()) | Err(_) => {}
     }
     if is_link(&link)?.is_none() {
-        std::os::unix::fs::symlink(new, &link)?;
+        eukhe_core::platform::fs::symlink(new, &link)?;
     }
     eukhe_core::platform::move_dir(old, new)?;
     std::fs::rename(&link, old)

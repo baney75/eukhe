@@ -746,9 +746,18 @@ static SOCKET_REFUSAL_LOGGED: AtomicBool = AtomicBool::new(false);
 
 /// The fence's pure decision (unit-testable without `chown`): the
 /// metadata must be a socket owned by `own_uid`.
+#[cfg(unix)]
 fn pane_socket_is_ownable(metadata: &std::fs::Metadata, own_uid: u32) -> bool {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
     metadata.file_type().is_socket() && metadata.uid() == own_uid
+}
+
+/// Windows has no socket files a pane could own and no uid to compare:
+/// the fence fails closed and the session stays unreported.
+#[cfg(windows)]
+fn pane_socket_is_ownable(metadata: &std::fs::Metadata, own_uid: u32) -> bool {
+    let _ = (metadata, own_uid);
+    false
 }
 
 /// This process's effective uid, std-only (the crate forbids unsafe
@@ -764,6 +773,7 @@ fn effective_uid() -> Option<u32> {
 /// The uid probe itself: `None` when the probe file cannot be created or
 /// read — the fence FAILS CLOSED on `None` (it must never fall back to
 /// uid 0, which would accept a root-owned socket).
+#[cfg(unix)]
 fn probe_effective_uid(dir: &std::path::Path) -> Option<u32> {
     use std::os::unix::fs::MetadataExt;
     let probe = dir.join(format!("pa-herdr-uid-probe-{}", uuid::Uuid::new_v4()));
@@ -773,6 +783,13 @@ fn probe_effective_uid(dir: &std::path::Path) -> Option<u32> {
         .ok();
     let _ = std::fs::remove_file(&probe);
     uid
+}
+
+/// No uid on Windows: `None`, so the fence fails closed.
+#[cfg(windows)]
+fn probe_effective_uid(dir: &std::path::Path) -> Option<u32> {
+    let _ = dir;
+    None
 }
 
 /// The fence's verdict for one send.

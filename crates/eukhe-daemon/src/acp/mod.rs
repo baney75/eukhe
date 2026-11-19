@@ -36,12 +36,12 @@ fn same_cwd(requested: &Path, actual: &Path) -> bool {
         return true;
     }
     let identity = |path: &Path| -> Option<(u64, u64)> {
-        use std::os::unix::fs::MetadataExt;
-        let metadata = std::fs::metadata(path).ok()?;
-        if metadata.dev() == 0 || metadata.ino() == 0 {
+        // Windows reads no dev or ino (0): the canonical paths decide.
+        let stat = eukhe_core::platform::stat::stat_fields(&std::fs::metadata(path).ok()?);
+        if stat.dev == 0 || stat.ino == 0 {
             return None;
         }
-        Some((metadata.dev(), metadata.ino()))
+        Some((stat.dev, stat.ino))
     };
     if let (Some(left), Some(right)) = (identity(&requested), identity(&actual)) {
         return left == right;
