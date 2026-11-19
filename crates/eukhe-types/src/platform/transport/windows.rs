@@ -225,11 +225,33 @@ pub(crate) fn endpoint_bits(path: &Path) -> Option<(u64, u64)> {
 }
 
 /// Whether the file at `path` names a pipe eukhe made (live or left by a
-/// crashed listener).
+/// crashed listener). A bind's own staged and lock files
+/// ([`WORK_FILE_SUFFIX`]) never count, even while a staged one names a pipe.
 #[must_use]
 pub(crate) fn is_endpoint_file(path: &Path) -> bool {
-    std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
+    !is_work_file(path)
+        && std::fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_file())
         && endpoint_bits(path).is_some()
+}
+
+/// The suffix of the files a bind works with beside its endpoint: the
+/// staged copy of the endpoint file and the bind lock.
+const WORK_FILE_SUFFIX: &str = ".eukhe-bind";
+
+/// Whether `path` names one of a bind's own files ([`WORK_FILE_SUFFIX`]).
+fn is_work_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .is_some_and(|name| name.ends_with(WORK_FILE_SUFFIX))
+}
+
+/// A bind's own file beside the endpoint at `path`: `.<name>.<what>` and
+/// [`WORK_FILE_SUFFIX`].
+fn work_file(path: &Path, what: &str) -> PathBuf {
+    let mut name = std::ffi::OsString::from(".");
+    name.push(path.file_name().unwrap_or_default());
+    name.push(format!(".{what}{WORK_FILE_SUFFIX}"));
+    path.with_file_name(name)
 }
 
 /// Every path can name an endpoint file: Windows sets no address-length
@@ -313,17 +335,24 @@ impl Drop for PipeListener {
 }
 
 /// Write `name` into the endpoint file at `path`, whole or not at all: a
-/// staged file, hard-linked to `path`. A file already there that names a
-/// live pipe refuses the bind; one whose pipe is gone (a crashed
-/// listener's) is replaced.
+/// staged file, hard-linked to `path`. Binds at one path take turns
+/// ([`BindLock`]), so the check of the file there and its replacement are
+/// one step. An endpoint file whose pipe is gone (a crashed listener's) is
+/// replaced; one naming a live pipe refuses the bind (`AddrInUse`), and
+/// any other file there is left alone and refuses it (`AlreadyExists`).
 fn publish(path: &Path, name: &str) -> std::io::Result<()> {
-    let mut staged_name = path.file_name().unwrap_or_default().to_os_string();
-    staged_name.push(format!(".{}.tmp", std::process::id()));
-    let staged = path.with_file_name(staged_name);
+    let lock = BindLock::take(path)?;
+    let staged = work_file(path, &format!("{}.staged", std::process::id()));
     std::fs::write(&staged, format!("{name}\n"))?;
     let linked = std::fs::hard_link(&staged, path).or_else(|error| {
         if error.kind() != std::io::ErrorKind::AlreadyExists {
             return Err(error);
+        }
+        if !is_endpoint_file(path) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                format!("{} is a file that is no Eukhe endpoint", path.display()),
+            ));
         }
         if endpoint_listens(path) {
             return Err(std::io::Error::new(
@@ -335,7 +364,61 @@ fn publish(path: &Path, name: &str) -> std::io::Result<()> {
         std::fs::hard_link(&staged, path)
     });
     let removed = std::fs::remove_file(&staged);
+    drop(lock);
     linked.and(removed)
+}
+
+/// The Win32 error of an open of a file another handle holds unshared.
+const ERROR_SHARING_VIOLATION: i32 = 32;
+
+/// The turn of one bind at an endpoint path: its lock file, open with no
+/// sharing, so a second bind's open fails until this one closes it. The
+/// system closes it when its process ends, so a crashed bind holds no
+/// turn.
+struct BindLock {
+    path: PathBuf,
+    file: Option<std::fs::File>,
+}
+
+impl BindLock {
+    /// Wait for the turn at `path`, up to [`BUSY_WAIT`].
+    fn take(path: &Path) -> std::io::Result<Self> {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        let lock = work_file(path, "lock");
+        let deadline = std::time::Instant::now() + BUSY_WAIT;
+        loop {
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .share_mode(0)
+                .open(&lock)
+            {
+                Ok(file) => {
+                    return Ok(Self {
+                        path: lock,
+                        file: Some(file),
+                    })
+                }
+                Err(error)
+                    if error.raw_os_error() == Some(ERROR_SHARING_VIOLATION)
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(BUSY_POLL);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+    }
+}
+
+impl Drop for BindLock {
+    fn drop(&mut self) {
+        drop(self.file.take());
+        // A bind waiting on it opens it next and keeps it: then this
+        // removal fails and the file stays for it.
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 /// Whether the endpoint file at `path` names a pipe a listener serves: a
@@ -587,6 +670,85 @@ mod tests {
     use super::*;
     use crate::platform::access::{PeerVerdict, ServerVerdict};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// A file at the endpoint path that is no Eukhe endpoint refuses the
+    /// bind and is left as it was.
+    #[tokio::test]
+    async fn a_foreign_file_at_the_endpoint_path_refuses_the_bind_and_stays() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("notes.txt");
+        std::fs::write(&path, "my notes\n").expect("write");
+        let refused = bind_tokio(&path).err().map(|error| error.kind());
+        assert_eq!(
+            (refused, std::fs::read_to_string(&path).expect("read")),
+            (
+                Some(std::io::ErrorKind::AlreadyExists),
+                "my notes\n".to_owned()
+            )
+        );
+    }
+
+    /// Binds racing over a crashed listener's endpoint file: one wins, the
+    /// file names its pipe, and every other is refused.
+    #[test]
+    fn binds_racing_over_a_stale_endpoint_have_one_winner() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .expect("runtime");
+        for round in 0..20 {
+            let dir = tempfile::TempDir::new().expect("temp dir");
+            let path = dir.path().join("daemon.sock");
+            std::fs::write(&path, format!("{PIPE_PREFIX}{round:032x}\n")).expect("stale file");
+            let start = std::sync::Arc::new(std::sync::Barrier::new(4));
+            let binds: Vec<_> = (0..4)
+                .map(|_| {
+                    let (path, start, handle) = (
+                        path.clone(),
+                        std::sync::Arc::clone(&start),
+                        runtime.handle().clone(),
+                    );
+                    std::thread::spawn(move || {
+                        let _entered = handle.enter();
+                        start.wait();
+                        PipeListener::bind(&path)
+                    })
+                })
+                .collect();
+            let bound: Vec<PipeListener> = binds
+                .into_iter()
+                .filter_map(|bind| bind.join().expect("bind thread").ok())
+                .collect();
+            let names: Vec<&str> = bound
+                .iter()
+                .map(|listener| listener.name.as_str())
+                .collect();
+            let published = read_pipe_name(&path).expect("endpoint file");
+            assert_eq!(
+                (names.len(), names.first().copied()),
+                (1, Some(published.as_str()))
+            );
+        }
+    }
+
+    /// A bind's staged and lock files are never endpoints, even when the
+    /// staged one names a pipe.
+    #[test]
+    fn a_binds_own_files_are_no_endpoints() {
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let path = dir.path().join("daemon.sock");
+        let staged = work_file(&path, "4120.staged");
+        std::fs::write(&staged, format!("{PIPE_PREFIX}{:032x}\n", 7)).expect("staged");
+        std::fs::write(work_file(&path, "lock"), "").expect("lock");
+        assert_eq!(
+            (
+                is_endpoint_file(&staged),
+                crate::platform::endpoints::endpoints_in(dir.path())
+            ),
+            (false, Vec::<PathBuf>::new())
+        );
+    }
 
     /// Dropping a write half closes the pipe: the peer reads its end, and
     /// so does the dropping side's read half.
