@@ -148,8 +148,7 @@ impl SocketOwner {
             Some(path) => Path::new(path) == socket_path,
             None => {
                 socket_path == eukhe_types::platform::daemon_socket::default_daemon_socket_path()
-                    || socket_path
-                        == eukhe_types::platform::daemon_socket::legacy_daemon_socket_path()
+                    || is_legacy_default(socket_path)
             }
         };
         if !on_socket {
@@ -160,6 +159,19 @@ impl SocketOwner {
         }
         None
     }
+}
+
+/// Whether `socket_path` is the default socket of releases up to 0.10.73.
+#[cfg(unix)]
+fn is_legacy_default(socket_path: &Path) -> bool {
+    socket_path == eukhe_types::platform::daemon_socket::legacy_daemon_socket_path()
+}
+
+/// No release up to 0.10.73 ran on Windows: no earlier default there.
+#[cfg(windows)]
+fn is_legacy_default(socket_path: &Path) -> bool {
+    let _ = socket_path;
+    false
 }
 
 /// The process listening on `socket_path`, classified. `None` when no
@@ -244,6 +256,15 @@ fn listening_owners(socket_path: &Path) -> Vec<SocketOwner> {
             })
         })
         .collect()
+}
+
+/// Windows: no listener census. A pipe's server pid is not readable from
+/// safe Rust (`transport::listener_pid` answers 0), so no holder is
+/// visible and the caller treats the socket as held by no known process.
+#[cfg(windows)]
+fn listening_owners(socket_path: &Path) -> Vec<SocketOwner> {
+    let _ = socket_path;
+    Vec::new()
 }
 
 #[cfg(test)]

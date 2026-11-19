@@ -11,7 +11,9 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 
-use super::install::{launcher_dir, launcher_script, Installer, PAYLOAD_PREFIX};
+#[cfg(unix)]
+use super::install::launcher_script;
+use super::install::{launcher_dir, Installer, PAYLOAD_PREFIX};
 use super::Voice;
 
 /// The stage directory name's prefix (`.stage-eukhe-<version>.<pid>`).
@@ -233,10 +235,22 @@ pub(super) fn prune(install: &Installer, current: &Path) -> Vec<String> {
         .collect()
 }
 
+#[cfg(unix)]
 fn write_launcher(temp: &Path, payload: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::write(temp, launcher_script(payload))?;
     std::fs::set_permissions(temp, std::fs::Permissions::from_mode(0o755))
+}
+
+/// No launcher on Windows: the installer's launcher is a shell script, and
+/// no installer release exists for Windows (a release there is a zip).
+#[cfg(windows)]
+fn write_launcher(temp: &Path, payload: &Path) -> std::io::Result<()> {
+    let _ = (temp, payload);
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "eukhe update cannot install on Windows: unpack the release zip instead",
+    ))
 }
 
 /// Whether the payload's `eukhe` reports `version`.

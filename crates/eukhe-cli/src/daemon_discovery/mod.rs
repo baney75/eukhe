@@ -213,6 +213,19 @@ pub(crate) struct DaemonInfo {
     pub has_tracked_workers: Option<bool>,
 }
 
+/// The socket dir of releases up to 0.10.73.
+#[cfg(unix)]
+fn legacy_socket_dir() -> PathBuf {
+    eukhe_types::platform::daemon_socket::legacy_socket_dir()
+}
+
+/// No release up to 0.10.73 ran on Windows: the earlier socket dir there
+/// is the current one, so the default scope sweeps that one dir.
+#[cfg(windows)]
+fn legacy_socket_dir() -> PathBuf {
+    eukhe_types::platform::daemon_socket::socket_dir()
+}
+
 /// The current invocation's state root (TS `currentDaemonStateRoot`), for
 /// the `--daemon-socket` value the command was given: a named socket (flag
 /// or env) scopes it to that socket, else a named agent dir to that agent
@@ -226,7 +239,7 @@ pub(crate) fn current_state_root(daemon_socket: Option<&str>) -> DaemonStateRoot
     } else {
         DiscoveryScope::Default {
             socket_dir: eukhe_types::platform::daemon_socket::socket_dir(),
-            legacy_socket_dir: eukhe_types::platform::daemon_socket::legacy_socket_dir(),
+            legacy_socket_dir: legacy_socket_dir(),
         }
     };
     DaemonStateRoot {

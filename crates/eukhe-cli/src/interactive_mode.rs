@@ -373,7 +373,6 @@ fn after_session(outcome: &mut eukhe_tui::interactive::InteractiveOutcome) -> Af
 /// session directory. Returns only when the start failed.
 fn start_again(relaunch: &Relaunch, options: &RunOptions) -> anyhow::Error {
     use std::io::Write as _;
-    use std::os::unix::process::CommandExt as _;
     let mut command = Command::new(&relaunch.exe);
     command.arg("--resume").arg(&relaunch.session);
     if let Some(socket) = &options.daemon_socket {
@@ -384,7 +383,7 @@ fn start_again(relaunch: &Relaunch, options: &RunOptions) -> anyhow::Error {
     }
     // Nothing this process wrote may land after the new one's first frame.
     let _ = std::io::stdout().flush();
-    let error = command.exec();
+    let error = crate::replace_process::replace_process(&mut command);
     anyhow!(
         "cannot start {} again: {error}. Resume this session with: eukhe --resume {}",
         relaunch.exe.display(),
