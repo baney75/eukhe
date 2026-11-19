@@ -14,6 +14,8 @@
 //! answers `cycle_thinking_level` as the daemon does (the next or previous
 //! level of the offered ladder, with wrap; `null` for fewer than two
 //! levels), and the settings menu keeps shift+tab for its tab switch.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

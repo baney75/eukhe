@@ -8,6 +8,8 @@
 //! notes carry the TS wording, the readout appears after the first completed
 //! response with positive usage and span, and turning the display off clears
 //! both the stats and the row.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

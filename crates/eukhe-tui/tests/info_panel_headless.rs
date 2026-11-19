@@ -8,6 +8,8 @@
 //! command's content. The `?` quick-shortcut guide is REMOVED entirely
 //! (the operator's directive): pressing `?` types into the editor and no
 //! guide mounts anywhere in the run.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 // Pedantic-gate exceptions (every other pedantic warning in this crate is
 // fixed in place; each exception carries its one-line justification):
 // - the casts: terminal-layout arithmetic narrows structurally bounded

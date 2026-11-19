@@ -42,7 +42,7 @@ pub(crate) async fn edit(command: &str, text: &str) -> Result<Option<String>> {
     // ours to overwrite or remove.
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+    eukhe_types::platform::mode::CreationMode::creation_mode(&mut options, 0o600);
     // A path we did not create is not ours to delete: only the
     // create's failure returns early, and the cleanup below then runs on
     // every path past a successful create (a write failure on a file we

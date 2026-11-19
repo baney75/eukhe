@@ -11,6 +11,8 @@
 //! guarantees: a working indicator is on screen from the Enter on (before
 //! the daemon answered anything), and the turn's end leaves exactly one
 //! visible error row naming the error and the next step, with no loader.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

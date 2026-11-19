@@ -467,9 +467,21 @@ fn read_incident_log_lines(
 
 /// The filesystem identity of the log: `dev:ino` (a rotation changes the
 /// inode); the TS `stats.dev}:${stats.ino}` shape.
+#[cfg(unix)]
 fn file_identity(stats: &std::fs::Metadata) -> String {
     use std::os::unix::fs::MetadataExt;
     format!("{}:{}", stats.dev(), stats.ino())
+}
+
+/// The filesystem identity of the log on Windows: its creation time (the
+/// file index is unstable std there), so a rotation that makes a new file
+/// changes it. A file made at a name deleted within the tunneling window
+/// (15 seconds by default) can inherit the old creation time: that
+/// rotation reads as the same file until its size falls under the offset.
+#[cfg(windows)]
+fn file_identity(stats: &std::fs::Metadata) -> String {
+    use std::os::windows::fs::MetadataExt;
+    format!("ctime:{}", stats.creation_time())
 }
 
 /// Keep windowed entries in stable time order across polls: new entries

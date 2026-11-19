@@ -6,6 +6,8 @@
 //! supervisor refuses the re-attach the window allows, then serves the
 //! session again. The window is the injected test window (0 ms), so the
 //! test waits only on what the screen shows.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixListener;

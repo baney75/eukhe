@@ -6,6 +6,8 @@
 //! during its tools says "Operation aborted", not "ended without a reply"
 //! (F4). Each test replays a run against the real interactive loop and a
 //! scripted mock daemon that waits for the client's requests.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

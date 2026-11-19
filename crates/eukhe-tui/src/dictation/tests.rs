@@ -229,6 +229,7 @@ fn wav_bytes_frame_the_samples_as_16_khz_mono_pcm() {
     assert_eq!(wav_bytes(&[1, 0, 2, 0, 9]), expected);
 }
 
+#[cfg(unix)]
 fn shell(script: &str) -> RecorderProgram {
     RecorderProgram {
         program: PathBuf::from("/bin/sh"),

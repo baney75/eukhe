@@ -7,6 +7,8 @@
 //! checks the rendered frames: the working indicator is up exactly while
 //! work runs, and a turn that ends without an answer leaves exactly one
 //! row that says so and names the next step.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};

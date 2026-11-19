@@ -15,6 +15,8 @@
 //! loop that evaluates the exit arm against the pre-restore EMPTY
 //! editor exits the session silently instead — the run ends with no
 //! restore, no draft, no frames.
+// The mock daemon is a Unix socket (std::os::unix::net): Unix only.
+#![cfg(unix)]
 #![allow(clippy::too_many_lines, clippy::large_futures)]
 
 use std::io::{BufRead, BufReader, Write};
