@@ -373,7 +373,7 @@ fn load_skills_from_dir_internal(
     (result, state)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

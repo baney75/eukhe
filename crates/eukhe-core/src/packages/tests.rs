@@ -1,6 +1,8 @@
 //! Integration tests for npm and git package flows against local fixtures:
 //! a bash "npm" shim (no network) and a bare git repo cloned over the
 //! filesystem. These exercise the real child-process sequences the CLI runs.
+// The fixtures are bash shims and Unix modes: Unix only.
+#![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};

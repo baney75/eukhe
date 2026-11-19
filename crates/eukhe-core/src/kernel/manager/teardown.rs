@@ -256,7 +256,7 @@ impl Inner {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use crate::kernel::shared::{KernelManagerOptions, KernelShutdownOptions};
     use crate::kernel::{manager::KernelStartOptions, ReplKernelManager};
