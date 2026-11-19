@@ -248,10 +248,20 @@ mod tests {
             (true, vec![socket.clone()])
         );
         drop(listener);
+        // The Linux census has kept a closed listener a moment on CI
+        // runners (cargo test, other tests running beside it): it is
+        // asked again until a deadline.
         #[cfg(any(target_os = "linux", windows))]
-        assert_eq!(
-            (endpoint_exists(&socket), endpoints_in(dir.path())),
-            (false, Vec::<PathBuf>::new())
-        );
+        {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let gone = loop {
+                let seen = (endpoint_exists(&socket), endpoints_in(dir.path()));
+                if seen == (false, Vec::<PathBuf>::new()) || std::time::Instant::now() > deadline {
+                    break seen;
+                }
+                tokio::task::yield_now().await;
+            };
+            assert_eq!(gone, (false, Vec::<PathBuf>::new()));
+        }
     }
 }
