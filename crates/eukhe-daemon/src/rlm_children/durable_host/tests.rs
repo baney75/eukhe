@@ -9,7 +9,9 @@
 //! its scope.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use eukhe_core::child_workspace::{
@@ -1090,6 +1092,7 @@ async fn a_workspace_in_the_agent_dir_moves_to_the_work_root() {
 /// A move a crash cut once the copy was in the work root, before its
 /// symlink (made first as `<old>.link`) took the old place: the next use
 /// renames the symlink there.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_workspace_move_cut_before_its_link_ends_on_next_use() {
     let dir = tempfile::tempdir().unwrap();

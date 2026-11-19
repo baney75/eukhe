@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 pub(crate) use eukhe_core::platform::socket_dir::prepare_socket_dir;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) use eukhe_core::platform::socket_dir::SocketDir;
 
 use crate::paths::hash_key;

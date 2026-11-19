@@ -10,7 +10,8 @@
 //! last write. The env-less session stays silent (no boot-context bleed
 //! — the TS daemon's shared-process failure mode cannot recur here) until
 //! its attach adopts the pane identity (adopt-if-absent).
-
+// Unix sockets and listeners stand in for its peers: Unix only.
+#![cfg(unix)]
 // Pedantic-gate dispositions (fleet-uniform ruling; see create_join_e2e).
 #![allow(clippy::large_futures)]
 #![allow(

@@ -467,6 +467,7 @@ mod tests {
     /// direction: a respawn does not wait out the stale-socket path).
     /// Socket files on every platform: the cleanup's subject (an abstract
     /// endpoint leaves none).
+    #[cfg(unix)]
     #[tokio::test]
     async fn exit_cleanup_after_close_spares_a_live_successor_with_a_matching_identity() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -605,6 +606,7 @@ mod tests {
         assert!(!socket.exists(), "deep stale path still unlinks");
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn a_dangling_symlink_is_rejected_as_not_a_socket() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -626,6 +628,7 @@ mod tests {
         assert!(socket.exists());
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn live_listener_is_never_unlinked() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -652,6 +655,7 @@ mod tests {
             .expect("bind after stale cleanup");
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn unlink_refuses_a_live_listener_even_when_marked_stale() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -722,6 +726,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn cleanup_is_deferred_while_a_rival_holds_the_lock() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -764,6 +769,7 @@ mod tests {
     /// abstract endpoint's pid record), a dead endpoint whose lock a live
     /// process holds, another supervisor's endpoint, and a non-socket
     /// file keep their entries.
+    #[cfg(unix)]
     #[tokio::test]
     async fn the_start_sweep_reaps_only_this_supervisors_dead_worker_endpoints() {
         let dir = tempfile::TempDir::new().unwrap();

@@ -6,6 +6,8 @@
 //! from earlier e2e suites starve later test binaries on the shared
 //! mission box, so the exit is load-bearing for test hygiene too (the
 //! eukhe-daemon/eukhe-cli spawn helpers arm it with a short window).
+// Unix sockets and listeners stand in for its peers: Unix only.
+#![cfg(unix)]
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;

@@ -567,6 +567,7 @@ fn a_persisted_scan_state_resumes_like_the_full_fold() {
 /// (here a name the file does not carry - a cold scan cannot produce
 /// it), and scans cold past a corrupt one or one at another version.
 /// The persisted-sidecar twin of the test above.
+#[cfg(unix)]
 #[test]
 fn a_symlinked_lease_release_persists_a_sidecar_the_next_read_serves() {
     let dir = test_dir();

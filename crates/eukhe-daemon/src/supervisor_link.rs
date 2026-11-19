@@ -323,7 +323,8 @@ impl SupervisorLink {
     }
 }
 
-#[cfg(test)]
+// The tests serve over Unix sockets (UnixListener, UnixStream): Unix only.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use crate::protocol::{response_line, response_success};

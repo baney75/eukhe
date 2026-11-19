@@ -4,6 +4,8 @@
 //! allowed host through the fake, a host outside `ssh.hosts` is rejected
 //! by name with no `ssh` run, and a host that refuses the keys is the
 //! typed `auth` rejection.
+// The fake ssh is a shell script: Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;

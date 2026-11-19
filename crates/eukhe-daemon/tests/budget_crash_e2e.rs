@@ -9,6 +9,8 @@
 //! that replays exactly. Limits set while the session is idle (B15) are
 //! acknowledged only once on disk: a worker killed right after keeps them
 //! for the next task.
+// Unix sockets and listeners stand in for its peers: Unix only.
+#![cfg(unix)]
 #![allow(clippy::too_many_lines)]
 
 use std::io::{BufRead, BufReader, Write};
