@@ -1,5 +1,5 @@
-# eukhe releases: the four Unix targets built and packaged with the
-# repository's own release scripts, published as a GitHub release.
+# eukhe releases: the Unix targets and Windows x64 built and packaged with
+# the repository's own release scripts, published as a GitHub release.
 #
 # A release starts only from .github/scripts/ci_nightly.py (`gh workflow run
 # eukhe-release.yml -f sha=<commit>`), once a night, after the full gate
@@ -319,8 +319,100 @@ jobs:
             target/${{ matrix.target }}/package/manifest.json
           if-no-files-found: error
 
+  # Windows x64: the same gates as build-darwin on the runner image (MSVC
+  # and the image's LLVM clang for eukhe-bend's C), packed as a zip with
+  # eukhe.exe at its root. The zip ships beside the tarballs and in
+  # SHA256SUMS; nix/release.json lists Nix systems only, and `eukhe
+  # update` refuses on Windows, so release.json does not name it.
+  build-windows:
+    needs: version
+    name: build-${{ matrix.target }}
+    runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      # The version the binary reports (eukhe-build-info).
+      EUKHE_RELEASE_VERSION: ${{ needs.version.outputs.version }}
+      TARGET: ${{ matrix.target }}
+    steps:
+      # The archive carries the repository's LF endings (a Windows runner
+      # checks out CRLF by default).
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          persist-credentials: false
+      # The runner image ships rustup and LLVM; refusing to continue without
+      # them keeps the job off any package install.
+      - name: Install Rust (runner rustup; toolchain from rust-toolchain.toml)
+        run: |
+          set -euo pipefail
+          command -v rustup >/dev/null || { echo "::error::rustup is not preinstalled on ${RUNNER_OS}"; exit 1; }
+          rustup toolchain install --no-self-update
+          rustup target add "${TARGET}"
+      - name: LLVM clang of the runner image on PATH (eukhe-bend's C)
+        run: |
+          set -euo pipefail
+          llvm='C:\Program Files\LLVM\bin'
+          [[ -x "$(cygpath -u "${llvm}")/clang.exe" ]] || { echo "::error::LLVM clang is not preinstalled on ${RUNNER_OS}"; exit 1; }
+          echo "${llvm}" >> "${GITHUB_PATH}"
+      - name: Reproducible build environment
+        run: |
+          set -euo pipefail
+          {
+            echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)"
+            echo "RUSTFLAGS=--remap-path-prefix=${GITHUB_WORKSPACE}=/eukhe --remap-path-prefix=${CARGO_HOME:-${USERPROFILE}\.cargo}=/cargo"
+          } >> "${GITHUB_ENV}"
+      - name: Fetch dependencies (locked, checksummed)
+        run: cargo fetch --locked --target "${TARGET}"
+      - name: Build (dist profile, frozen, offline)
+        # The build identity names the released commit. STRIP=debuginfo
+        # links without a PDB, so no runner path rides the executable.
+        env:
+          EUKHE_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
+          CARGO_PROFILE_DIST_STRIP: debuginfo
+        run: cargo build --profile dist --frozen --target "${TARGET}" -j 4 -p eukhe-cli --bin eukhe
+      - name: "Livecheck: --version prints the release version"
+        run: |
+          set -euo pipefail
+          out="$("target/${TARGET}/dist/eukhe.exe" --version | tr -d '\r')"
+          [[ "${out}" == "${VERSION}" ]] || { echo "::error::binary reports '${out}', expected '${VERSION}'"; exit 1; }
+      - name: Generate bundled catalog asset (committed models.dev snapshot)
+        run: python .github/scripts/release/bundle_catalog.py generate --out "target/${TARGET}/catalog-assets"
+      - name: Assemble zip, checksums, manifest
+        run: |
+          set -euo pipefail
+          python .github/scripts/release/assemble_artifacts.py \
+            --repo-root . \
+            --version "${VERSION}" \
+            --target "${TARGET}" \
+            --binary "target/${TARGET}/dist/eukhe.exe" \
+            --catalog-assets "target/${TARGET}/catalog-assets" \
+            --out-dir "target/${TARGET}/package"
+          python .github/scripts/release/verify_release.py --dist-dir "target/${TARGET}/package" --version "${VERSION}" --target "${TARGET}"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: artifacts-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/package/eukhe-*
+            target/${{ matrix.target }}/package/SHA256SUMS
+            target/${{ matrix.target }}/package/manifest.json
+          if-no-files-found: error
+
   publish:
-    needs: [version, build-linux, build-darwin]
+    needs: [version, build-linux, build-darwin, build-windows]
     runs-on: ubuntu-24.04
     # id-token + attestations: the build provenance attestation below
     # (Sigstore-signed via the workflow's OIDC identity). Only this job
@@ -353,6 +445,8 @@ jobs:
             .github/scripts/release/xz_archives.py
           sparse-checkout-cone-mode: false
           persist-credentials: false
+      # The Windows zip is copied and summed as it is: no xz twin, and no
+      # release.json entry (no Nix system).
       # Each .tar.gz gets its .tar.xz twin (.github/scripts/release/xz_archives.py:
       # the same tar, a third smaller), which install.sh and `eukhe update`
       # download; release.json lists it under the system's `xz`. The .tar.gz
@@ -369,6 +463,8 @@ jobs:
               "linux-arm64": "aarch64-linux",
               "darwin-arm64": "aarch64-darwin",
           }
+          # Platforms shipped beside the Nix systems, outside release.json.
+          standalone = {"windows-x64"}
           repo, tag, version = os.environ["GH_REPO"], os.environ["TAG"], os.environ["VERSION"]
           out = pathlib.Path("release-out")
           out.mkdir()
@@ -380,7 +476,7 @@ jobs:
                   "hash": "sha256-" + base64.b64encode(hashlib.sha256(path.read_bytes()).digest()).decode(),
               }
 
-          sums, assets, archives = [], {}, {}
+          sums, assets, archives, shipped = [], {}, {}, set()
           for directory in sorted(p for p in pathlib.Path("incoming").iterdir() if p.is_dir()):
               manifest = json.loads((directory / "manifest.json").read_text())
               for binary in manifest["binaries"]:
@@ -388,6 +484,9 @@ jobs:
                   if hashlib.sha256(data).hexdigest() != binary["sha256"]:
                       sys.exit(f"{binary['file']}: sha256 mismatch")
                   shutil.copy2(directory / binary["file"], out / binary["file"])
+                  if binary["platform"] in standalone:
+                      shipped.add(binary["platform"])
+                      continue
                   archives[systems[binary["platform"]]] = out / binary["file"]
               for decoder in manifest.get("decoders", []):
                   shutil.copy2(directory / decoder["file"], out / decoder["file"])
@@ -398,7 +497,7 @@ jobs:
               xz = twins[system]
               assets[system] = {**asset(gz), "xz": asset(xz)}
               sums.append(f"{hashlib.sha256(xz.read_bytes()).hexdigest()}  {xz.name}")
-          missing = sorted(set(systems.values()) - set(assets))
+          missing = sorted(set(systems.values()) - set(assets)) + sorted(standalone - shipped)
           if missing:
               sys.exit(f"missing systems: {missing}")
           (out / "SHA256SUMS").write_text("\n".join(sorted(sums, key=lambda line: line.split()[1])) + "\n")
