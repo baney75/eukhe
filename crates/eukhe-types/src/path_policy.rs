@@ -105,6 +105,8 @@ pub struct PathPolicy {
 
 /// One step of a resolution.
 enum Part {
+    /// A Windows drive or share (`D:`, `\\server\share`, `\\?\D:`).
+    Prefix(OsString),
     Root,
     Up,
     Name(OsString),
@@ -115,7 +117,8 @@ fn push_parts(stack: &mut Vec<Part>, path: &Path) {
     let parts: Vec<Part> = path
         .components()
         .filter_map(|component| match component {
-            Component::Prefix(_) | Component::RootDir => Some(Part::Root),
+            Component::Prefix(prefix) => Some(Part::Prefix(prefix.as_os_str().to_os_string())),
+            Component::RootDir => Some(Part::Root),
             Component::CurDir => None,
             Component::ParentDir => Some(Part::Up),
             Component::Normal(name) => Some(Part::Name(name.to_os_string())),
@@ -169,7 +172,17 @@ pub fn resolve(absolute: &Path) -> RealPath {
     let mut looped = false;
     while let Some(part) = stack.pop() {
         match part {
-            Part::Root => path = PathBuf::from("/"),
+            Part::Prefix(prefix) => path = PathBuf::from(prefix),
+            Part::Root => {
+                // The root of the path's own drive or share (Windows), or
+                // `/`.
+                let mut root = match path.components().next() {
+                    Some(Component::Prefix(prefix)) => PathBuf::from(prefix.as_os_str()),
+                    Some(_) | None => PathBuf::new(),
+                };
+                root.push(std::path::MAIN_SEPARATOR_STR);
+                path = root;
+            }
             Part::Up => {
                 // `path` holds no link, so its parent is the real `..`;
                 // `..` of `/` is `/`.
@@ -253,3 +266,25 @@ impl PathPolicy {
 // with a privilege a test runner lacks.
 #[cfg(all(test, unix))]
 mod tests;
+
+/// Windows: a drive or share stays on the path it roots.
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+
+    #[test]
+    fn a_drive_path_keeps_its_drive() {
+        assert_eq!(
+            [
+                resolve(Path::new(r"D:\a\..\b")).into_path(),
+                resolve(Path::new(r"D:\..\x")).into_path(),
+                resolve(Path::new(r"C:\no-such-dir\.\b")).into_path(),
+            ],
+            [
+                PathBuf::from(r"D:\b"),
+                PathBuf::from(r"D:\x"),
+                PathBuf::from(r"C:\no-such-dir\b"),
+            ]
+        );
+    }
+}
