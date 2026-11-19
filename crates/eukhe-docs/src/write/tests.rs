@@ -1,6 +1,9 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::sync::Mutex;
 
+#[cfg(unix)]
 use eukhe_types::path_policy::RealPath;
 
 use super::*;
@@ -8,17 +11,20 @@ use crate::gate::Open;
 use crate::hashline::{apply_hashline, FileChange, HashlineOptions};
 
 /// A gate that records each check and refuses every access to a path
-/// under `refused`.
+/// under `refused` (the link test is Unix only).
+#[cfg(unix)]
 struct Recorder {
     refused: PathBuf,
     checks: Mutex<Vec<(Access, PathBuf, String)>>,
 }
 
 /// The refusal of [`Recorder`].
+#[cfg(unix)]
 #[derive(Debug, thiserror::Error)]
 #[error("the user denied it")]
 struct Denied;
 
+#[cfg(unix)]
 impl AccessGate for Recorder {
     fn check(&self, access: Access, real: &RealPath, display: &str) -> Result<(), AccessRefusal> {
         let real = real.path();
@@ -220,6 +226,7 @@ fn creates_with_parents_and_records_every_line_seen() {
     assert_eq!(seen.into_iter().collect::<Vec<_>>(), [1, 2]);
 }
 
+#[cfg(unix)]
 #[test]
 fn overwrite_keeps_bom_crlf_and_mode() {
     let fixture = Fixture::new();
@@ -277,6 +284,7 @@ fn overwrite_of_a_file_not_utf8_warns() {
     );
 }
 
+#[cfg(unix)]
 /// Regression: a created file that starts with `#!` was made 0o755, so
 /// an agent's write made a program that a later step could run.
 #[test]
@@ -290,6 +298,7 @@ fn created_script_gets_no_execute_bit() {
     assert_eq!(mode & 0o111, 0);
 }
 
+#[cfg(unix)]
 /// A write through a symlink is checked on the link's target, and a
 /// refused write changes nothing.
 #[test]

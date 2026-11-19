@@ -129,6 +129,7 @@ fn excluded_directories_are_noticed_and_temporary_files_hidden() {
     );
 }
 
+#[cfg(unix)]
 /// A directory the walk cannot read is skipped with a notice; the walk
 /// goes on.
 #[test]
