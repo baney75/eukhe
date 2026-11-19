@@ -9,9 +9,9 @@
 //! platform exposes no identity - owners then trust liveness checks alone,
 //! exactly like TS records with `processStartId: undefined`.
 //!
-//! Windows: no start identity (a process's creation time is a Win32 query
-//! safe Rust cannot make), liveness from `tasklist`, and no job control:
-//! the suspend calls refuse with an error.
+//! Windows: the start identity is the process's creation time (sysinfo),
+//! liveness from `tasklist`, and no job control: the suspend calls refuse
+//! with an error.
 
 /// The pid-reuse identity: `/proc/<pid>/stat` field 22 (starttime) as
 /// `proc:<starttime>`, else the portable `ps:<lstart>` identity (TS
@@ -37,12 +37,29 @@ pub fn process_start_id(pid: u32) -> Option<String> {
     ps_process_start_id(pid)
 }
 
-/// Windows exposes no start identity to safe Rust: `None`, and owners
-/// trust liveness checks alone.
+/// Windows: `win:<creation time>`, the process's creation time in seconds
+/// since the epoch (`GetProcessTimes`, read through sysinfo). A recycled
+/// pid names a process created later, so a recorded identity that still
+/// matches names the same process, to the second as `ps:<lstart>` does.
+/// `None` when the pid names no process or its creation time is
+/// unreadable (a process of another user): owners then trust liveness
+/// checks alone.
 #[cfg(windows)]
 #[must_use]
-pub fn process_start_id(_pid: u32) -> Option<String> {
-    None
+pub fn process_start_id(pid: u32) -> Option<String> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+    if pid == 0 {
+        return None;
+    }
+    let pid = Pid::from_u32(pid);
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing(),
+    );
+    let created = system.process(pid)?.start_time();
+    (created != 0).then(|| format!("win:{created}"))
 }
 
 /// The `ps` the no-/proc probes run. macOS: `/bin/ps` by absolute path,
@@ -932,8 +949,8 @@ mod tasklist_tests {
     }
 }
 
-/// Windows: the suspend calls refuse, the restore has nothing to lower, no
-/// start identity, and liveness follows a child from spawn to exit.
+/// Windows: the suspend calls refuse, the restore has nothing to lower, and
+/// liveness and the start identity follow a child from spawn to its kill.
 #[cfg(all(test, windows))]
 mod windows_tests {
     use super::*;
@@ -955,7 +972,7 @@ mod windows_tests {
     }
 
     #[test]
-    fn a_child_reads_alive_until_it_exits_and_has_no_start_identity() {
+    fn a_child_reads_alive_with_one_start_identity_until_its_tree_is_killed() {
         let mut child = std::process::Command::new("cmd")
             .args(["/C", "pause"])
             .stdin(std::process::Stdio::piped())
@@ -963,18 +980,27 @@ mod windows_tests {
             .spawn()
             .expect("spawn cmd");
         let pid = child.id();
+        let identity = process_start_id(pid);
         assert_eq!(
             (
                 is_process_alive(pid).expect("liveness"),
-                process_start_id(pid)
+                identity.as_deref().is_some_and(|id| id.starts_with("win:")),
+                process_start_id(pid) == identity,
             ),
-            (true, None)
+            (true, true, true)
         );
-        child.kill().expect("kill");
+        kill_process_tree(pid).expect("kill the tree");
         child.wait().expect("wait");
         // The process handle goes too: nothing holds the exited process.
         drop(child);
-        assert!(!is_process_alive(pid).expect("liveness"));
+        assert_eq!(
+            (
+                is_process_alive(pid).expect("liveness"),
+                process_start_id(pid),
+                kill_process(pid).map_err(|error| error.kind()),
+            ),
+            (false, None, Err(std::io::ErrorKind::NotFound))
+        );
     }
 
     #[test]

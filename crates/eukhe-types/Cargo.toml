@@ -44,6 +44,10 @@ libproc = "0.14"
 # MIT OR Apache-2.0.
 [target.'cfg(windows)'.dependencies]
 getrandom = "0.3"
+# platform/process: a process's creation time (GetProcessTimes) through a
+# safe API, the pid-reuse identity of a Windows ProcessIdentity. Windows
+# only; only its process table. MIT.
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
 
 [dev-dependencies]
 tempfile = "3"
