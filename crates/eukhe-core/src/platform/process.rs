@@ -1,17 +1,37 @@
-//! Process control: signals, process groups, detached spawns.
+//! Process control: signals, process groups, detached spawns. Windows:
+//! `process/windows.rs`.
 //!
 //! nix `kill`/`killpg` / `process_group(0)`. Signatures that report
 //! outcomes return `bool` where callers treat "unproven" conservatively (a
 //! kill that could not be proven reports false, matching the TS
 //! `killOrphanProcess` contract).
 
+#[cfg(unix)]
 use std::os::fd::OwnedFd;
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use eukhe_types::platform::process::{NEW_SESSION_ENV, STARTUP_STDERR_ENV};
+#[cfg(unix)]
+use eukhe_types::platform::process::NEW_SESSION_ENV;
+use eukhe_types::platform::process::STARTUP_STDERR_ENV;
+#[cfg(unix)]
 use nix::sys::signal::{kill, killpg};
+#[cfg(unix)]
 use nix::unistd::Pid;
+
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+pub use windows::{
+    enter_requested_session, kill_pid, kill_process_group_or_pid, open_pidfd, pid_exists,
+    pidfd_signal, process_group_id, raise_open_file_limit, release_startup_stderr,
+    set_new_process_group, signal_process_group, termination_signal, wait_for_exit, ProcessHandle,
+};
+
+/// The kernel-held handle of one process ([`open_pidfd`]).
+#[cfg(unix)]
+pub type ProcessHandle = OwnedFd;
 
 /// Termination signal for [`kill_pid`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -22,6 +42,7 @@ pub enum Signal {
     Kill,
 }
 
+#[cfg(unix)]
 impl Signal {
     fn nix(self) -> nix::sys::signal::Signal {
         match self {
@@ -33,6 +54,7 @@ impl Signal {
 
 /// Put the spawned child into its own process group so later group-scoped
 /// kills reach all of its descendants (TS: `detached: true` on POSIX).
+#[cfg(unix)]
 pub fn set_new_process_group(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
@@ -49,6 +71,7 @@ pub fn set_new_process_group(command: &mut Command) {
 /// # Errors
 ///
 /// The `setsid` failure.
+#[cfg(unix)]
 pub fn enter_requested_session() -> std::io::Result<()> {
     if std::env::var_os(NEW_SESSION_ENV).is_none() {
         return Ok(());
@@ -84,6 +107,7 @@ pub fn claim_startup_stderr() {
 /// # Errors
 ///
 /// Opening the null device or `dup2` failed.
+#[cfg(unix)]
 pub fn release_startup_stderr() -> std::io::Result<()> {
     use std::os::fd::AsRawFd as _;
     if !STARTUP_STDERR.swap(false, Ordering::SeqCst) {
@@ -102,6 +126,7 @@ pub fn release_startup_stderr() -> std::io::Result<()> {
 /// # Errors
 ///
 /// The OS error of a failed `getrlimit`, `sysctlbyname` or `setrlimit`.
+#[cfg(unix)]
 pub fn raise_open_file_limit() -> std::io::Result<u64> {
     use nix::sys::resource::{getrlimit, setrlimit, Resource};
     let (soft, hard) = getrlimit(Resource::RLIMIT_NOFILE)?;
@@ -129,6 +154,7 @@ pub fn raise_open_file_limit() -> std::io::Result<u64> {
 
 /// Signal a single pid. Returns true only when the signal was delivered,
 /// proving the pid was alive at signal time.
+#[cfg(unix)]
 #[must_use]
 pub fn kill_pid(pid: i32, signal: Signal) -> bool {
     if pid <= 0 {
@@ -139,6 +165,7 @@ pub fn kill_pid(pid: i32, signal: Signal) -> bool {
 
 /// Signal the process group `pgid` (a group leader's pid). Returns true
 /// only when the signal was delivered to at least one member.
+#[cfg(unix)]
 #[must_use]
 pub fn signal_process_group(pgid: i32, signal: Signal) -> bool {
     if pgid <= 0 {
@@ -150,6 +177,7 @@ pub fn signal_process_group(pgid: i32, signal: Signal) -> bool {
 /// The process group `pid` belongs to (`getpgid`), or `None` when the pid
 /// is gone or not observable. A process spawned through
 /// [`set_new_process_group`] leads its own group: its pgid is its pid.
+#[cfg(unix)]
 #[must_use]
 pub fn process_group_id(pid: u32) -> Option<i32> {
     let raw = i32::try_from(pid).ok().filter(|raw| *raw > 0)?;
@@ -162,6 +190,7 @@ pub fn process_group_id(pid: u32) -> Option<i32> {
 /// Kill a process and all its children: the process group first (`bash()`
 /// children run detached in a new group), then the bare pid as fallback.
 /// Returns true when either signal was delivered (TS `killProcessTree`).
+#[cfg(unix)]
 #[must_use]
 pub fn kill_process_group_or_pid(pid: i32) -> bool {
     if pid <= 0 {
@@ -173,6 +202,7 @@ pub fn kill_process_group_or_pid(pid: i32) -> bool {
 
 /// Cheap `kill(pid, 0)` existence probe; counts zombies as existing. A pid
 /// beyond `pid_t`'s range names no process.
+#[cfg(unix)]
 #[must_use]
 pub fn pid_exists(pid: u32) -> bool {
     if pid == 0 {
@@ -387,6 +417,7 @@ pub async fn wait_for_exit(pid: u32) -> std::io::Result<()> {
 
 /// The signal number that terminated a child, when it was signaled
 /// (`ExitStatus::signal`).
+#[cfg(unix)]
 #[must_use]
 pub fn termination_signal(status: &std::process::ExitStatus) -> Option<i32> {
     use std::os::unix::process::ExitStatusExt;
@@ -396,7 +427,7 @@ pub fn termination_signal(status: &std::process::ExitStatus) -> Option<i32> {
 /// The kernel-watch arms' shared exit contract: a pid that names no live
 /// process resolves at once, so a worker that died before its watch
 /// registered still reports an exit.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod exit_wait_tests {
     use super::*;
 

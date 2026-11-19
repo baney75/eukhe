@@ -5,7 +5,6 @@
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use super::fs::{rename_no_replace, sync_directory};
@@ -123,14 +122,14 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
         let meta = fs::symlink_metadata(&source)?;
         let kind = meta.file_type();
         if kind.is_symlink() {
-            std::os::unix::fs::symlink(fs::read_link(&source)?, &target)?;
+            copy_link(&source, &target)?;
         } else if kind.is_dir() {
             fs::create_dir(&target)?;
             for entry in fs::read_dir(&source)? {
                 let name = entry?.file_name();
                 pending.push((source.join(&name), target.join(&name)));
             }
-            dirs.push((target, meta.permissions().mode()));
+            dirs.push((target, eukhe_types::platform::mode::mode_of(&meta)));
         } else {
             fs::copy(&source, &target)?;
             fs::File::open(&target)?.sync_all()?;
@@ -139,9 +138,32 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
     // Deepest first: a directory's mode may forbid writing into it.
     for (dir, mode) in dirs.into_iter().rev() {
         sync_directory(&dir)?;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(mode))?;
+        if let Some(mode) = mode {
+            eukhe_types::platform::mode::set_mode(&dir, mode)?;
+        }
     }
     Ok(())
+}
+
+/// Copy the symbolic link `source` as a link at `target`.
+#[cfg(unix)]
+fn copy_link(source: &Path, target: &Path) -> io::Result<()> {
+    std::os::unix::fs::symlink(fs::read_link(source)?, target)
+}
+
+/// Copy the symbolic link `source` as a link of the same kind (file or
+/// directory link) at `target`. Making one needs the symbolic link
+/// privilege or Developer Mode: without it the copy fails with the OS
+/// error, and the move stops with the directory whole at `from`.
+#[cfg(windows)]
+fn copy_link(source: &Path, target: &Path) -> io::Result<()> {
+    use std::os::windows::fs::FileTypeExt as _;
+    let link = fs::read_link(source)?;
+    if fs::symlink_metadata(source)?.file_type().is_symlink_dir() {
+        std::os::windows::fs::symlink_dir(link, target)
+    } else {
+        std::os::windows::fs::symlink_file(link, target)
+    }
 }
 
 #[cfg(test)]

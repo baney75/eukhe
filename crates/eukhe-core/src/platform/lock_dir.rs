@@ -41,6 +41,7 @@ fn probe_mtime() -> (i64, i64) {
     (seconds, 5_000_000)
 }
 
+#[cfg(unix)]
 fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
     use nix::sys::stat::{utimensat, UtimensatFlags};
     use nix::sys::time::TimeSpec;
@@ -50,6 +51,30 @@ fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
     // error, never a truncated path.
     utimensat(None, path, &time, &time, UtimensatFlags::FollowSymlink)?;
     Ok(())
+}
+
+/// Set the mtime of a file or directory on Windows: std's `set_times` on
+/// a handle opened with backup semantics (`FILE_FLAG_BACKUP_SEMANTICS`,
+/// the one way a directory opens) and only the attribute-write right.
+/// NTFS keeps 100ns, so the probe's 5ms survives.
+#[cfg(windows)]
+fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
+    let (Ok(seconds), Ok(nanoseconds)) = (u64::try_from(seconds), u32::try_from(nanoseconds))
+    else {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "an mtime before 1970 on Windows",
+        ));
+    };
+    let time = std::time::UNIX_EPOCH + Duration::new(seconds, nanoseconds);
+    fs::OpenOptions::new()
+        .access_mode(FILE_WRITE_ATTRIBUTES)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?
+        .set_times(fs::FileTimes::new().set_modified(time))
 }
 
 /// An exclusive cross-process lock on `{path}.lock`, released on drop by
@@ -230,10 +255,7 @@ impl LockDir {
         if pid <= 0 {
             return true;
         }
-        if matches!(
-            nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
-            Err(nix::errno::Errno::ESRCH)
-        ) {
+        if !owner_pid_may_live(pid) {
             return true;
         }
         // A start identity the platform cannot show now counts as the
@@ -247,13 +269,13 @@ impl LockDir {
     /// An owned lock writes its private `owner` file before the mtime
     /// probe; any failure removes the half-built lock.
     fn create(path: &Path, owner: Option<&str>) -> io::Result<()> {
-        use std::os::unix::fs::PermissionsExt;
+        use eukhe_types::platform::mode::set_mode;
         fs::create_dir(path)?;
         let result = (|| {
             if let Some(owner) = owner {
-                fs::set_permissions(path, fs::Permissions::from_mode(0o700))?;
+                set_mode(path, 0o700)?;
                 fs::write(path.join("owner"), format!("{owner}\n"))?;
-                fs::set_permissions(path.join("owner"), fs::Permissions::from_mode(0o600))?;
+                set_mode(&path.join("owner"), 0o600)?;
             }
             let (sec, nanos) = probe_mtime();
             set_mtime(path, sec, nanos)
@@ -367,6 +389,24 @@ impl LockDir {
 
 /// The start identity of process `pid` as one word of an `owner` file (its
 /// whitespace runs as `_`), or `None` when the platform shows none.
+/// False only when no process has `pid` (`kill(pid, 0)` answers ESRCH);
+/// a pid this user may not signal still lives.
+#[cfg(unix)]
+fn owner_pid_may_live(pid: i32) -> bool {
+    !matches!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None),
+        Err(nix::errno::Errno::ESRCH)
+    )
+}
+
+/// False only when no process has `pid` (the process list shows none); a
+/// list that cannot be read counts as alive: to take over a live owner's
+/// lock is worse than to wait.
+#[cfg(windows)]
+fn owner_pid_may_live(pid: i32) -> bool {
+    eukhe_types::platform::process::is_process_alive(pid.unsigned_abs()).unwrap_or(true)
+}
+
 fn start_word(pid: u32) -> Option<String> {
     eukhe_types::platform::process::process_start_id(pid)
         .map(|start| start.split_whitespace().collect::<Vec<_>>().join("_"))
