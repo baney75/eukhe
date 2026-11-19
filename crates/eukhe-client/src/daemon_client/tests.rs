@@ -1,10 +1,10 @@
 use super::*;
+use crate::test_transport::Listener;
 use serde_json::json;
-use tokio::net::UnixListener;
 
 /// Minimal scripted supervisor used by client tests: hello on connect,
 /// canned responses keyed by command type.
-async fn spawn_mock_daemon(listener: UnixListener) {
+async fn spawn_mock_daemon(listener: Listener) {
     let (stream, _) = listener.accept().await.expect("accept");
     let (reader, mut writer) = stream.into_split();
     let mut reader = BufReader::new(reader);
@@ -73,7 +73,7 @@ fn empty_prompt_input() -> eukhe_types::daemon::PromptInput {
 async fn handshake_and_request_round_trip() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     tokio::spawn(async move { spawn_mock_daemon(listener).await });
 
     let (client, mut events) = DaemonClient::connect(&socket).await.unwrap();
@@ -121,7 +121,7 @@ async fn handshake_and_request_round_trip() {
 async fn a_named_client_is_its_name_and_pid_to_the_daemon() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     let (seen_tx, seen_rx) = oneshot::channel::<Value>();
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
@@ -169,7 +169,7 @@ async fn a_named_client_is_its_name_and_pid_to_the_daemon() {
 async fn request_timeout_reports_socket() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     // A daemon that sends hello but never answers commands.
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
@@ -219,7 +219,7 @@ async fn request_timeout_reports_socket() {
 async fn request_ok_with_timeout_holds_the_callers_budget_and_types_refusals() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     // A daemon that refuses `list` and never answers `prompt`.
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
@@ -302,7 +302,7 @@ async fn request_ok_with_timeout_holds_the_callers_budget_and_types_refusals() {
 async fn a_request_after_the_reader_died_refuses_instead_of_riding_the_budget() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     // A daemon that greets, then drops the socket: the client's reader
     // task ends and its close-time failure pass runs.
     tokio::spawn(async move {
@@ -509,7 +509,7 @@ fn fail_pending_resolves_a_transport_failure_not_a_refusal() {
 
 /// A scripted worker socket for the direct-link tests: hello frame,
 /// `peer_auth` acceptance, one attach response, then one streamed event.
-async fn spawn_mock_worker(listener: tokio::net::UnixListener) {
+async fn spawn_mock_worker(listener: Listener) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     let (stream, _) = listener.accept().await.expect("worker accept");
@@ -614,8 +614,8 @@ async fn direct_upgrade_routes_attach_and_streams_events() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
     let worker_socket = dir.path().join("w.sock");
-    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
-    let worker_listener = tokio::net::UnixListener::bind(&worker_socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
+    let worker_listener = Listener::bind(&worker_socket).unwrap();
     tokio::spawn(async move { spawn_mock_worker(worker_listener).await });
 
     // Scripted supervisor: advertises direct_peer_transport, answers the
@@ -734,7 +734,7 @@ async fn direct_upgrade_routes_attach_and_streams_events() {
 /// command after `peer_auth` until `release` fires, reporting the
 /// command's arrival on `received`.
 async fn spawn_held_worker(
-    listener: UnixListener,
+    listener: Listener,
     received: oneshot::Sender<()>,
     release: oneshot::Receiver<()>,
 ) {
@@ -799,7 +799,7 @@ async fn spawn_held_worker(
 async fn a_replaced_link_closing_late_never_fails_the_live_links_requests() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     tokio::spawn(spawn_mock_daemon(listener));
     let (client, _events) = DaemonClient::connect(&socket).await.unwrap();
     let ticket = |socket: &Path, session: &str| eukhe_types::daemon::DaemonPeerTransportTicket {
@@ -815,7 +815,7 @@ async fn a_replaced_link_closing_late_never_fails_the_live_links_requests() {
 
     // The switched-away session's link, still open.
     let replaced_socket = dir.path().join("replaced.sock");
-    let replaced_listener = UnixListener::bind(&replaced_socket).unwrap();
+    let replaced_listener = Listener::bind(&replaced_socket).unwrap();
     tokio::spawn(spawn_mock_worker(replaced_listener));
     let (replaced_tx, mut replaced_events) = mpsc::unbounded_channel();
     let replaced = connect_direct(
@@ -829,7 +829,7 @@ async fn a_replaced_link_closing_late_never_fails_the_live_links_requests() {
     // The switched-to session's link serves the client; its worker holds
     // the answer until the replaced link's sweep has run.
     let live_socket = dir.path().join("live.sock");
-    let live_listener = UnixListener::bind(&live_socket).unwrap();
+    let live_listener = Listener::bind(&live_socket).unwrap();
     let (received_tx, received_rx) = oneshot::channel();
     let (release_tx, release_rx) = oneshot::channel();
     tokio::spawn(spawn_held_worker(live_listener, received_tx, release_rx));
@@ -883,7 +883,7 @@ async fn dead_connection_fails_pending_requests_immediately() {
     // then waited out the full request timeout on a dead socket).
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     let handle = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut writer = stream;
@@ -932,7 +932,7 @@ async fn dead_connection_fails_pending_requests_immediately() {
 async fn without_capability_upgrade_is_a_no_op() {
     let dir = tempfile::TempDir::new().unwrap();
     let socket = dir.path().join("d.sock");
-    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    let listener = Listener::bind(&socket).unwrap();
     tokio::spawn(async move { spawn_mock_daemon(listener).await });
     let (client, _events) = DaemonClient::connect(&socket).await.unwrap();
     assert!(!crate::direct_transport::supervisor_supports_direct(
@@ -1001,7 +1001,7 @@ async fn greetings_classify_daemon_builds_and_foreign_daemons() {
     let mut outcomes = Vec::new();
     for (index, greeting) in cases.into_iter().enumerate() {
         let socket = dir.path().join(format!("d{index}.sock"));
-        let listener = UnixListener::bind(&socket).unwrap();
+        let listener = Listener::bind(&socket).unwrap();
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept");
             let (reader, mut writer) = stream.into_split();

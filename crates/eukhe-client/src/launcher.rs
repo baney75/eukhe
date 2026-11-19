@@ -535,6 +535,7 @@ impl ProcessLauncher {
     /// finds it idle. No start uses it: every client of this build looks for
     /// the daemon in the run dir. A daemon that stays is logged, never an
     /// error of the start.
+    #[cfg(unix)]
     async fn retire_legacy_daemon(&self, client: Build<'_>, takeover: &impl SocketTakeover) {
         let legacy = eukhe_types::platform::daemon_socket::legacy_daemon_socket_path();
         if self.socket_path != eukhe_types::platform::daemon_socket::default_daemon_socket_path()
@@ -569,6 +570,12 @@ impl ProcessLauncher {
             Replacement::Keep(_) => daemon_client.close(),
         }
     }
+
+    /// Windows has no earlier release's daemon to retire: no release up to
+    /// 0.10.73 ran there, so nothing serves a legacy endpoint.
+    #[cfg(windows)]
+    #[expect(clippy::unused_async, reason = "the Unix twin's signature: it awaits")]
+    async fn retire_legacy_daemon(&self, _client: Build<'_>, _takeover: &impl SocketTakeover) {}
 
     /// The error for a daemon this start does not use or replace.
     fn incompatible(&self, why: &str) -> anyhow::Error {
@@ -725,6 +732,12 @@ async fn socket_accepts(socket_path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    /// How the platform shows a process's exit with status 1.
+    #[cfg(unix)]
+    const EXITED_1: &str = "exit status: 1";
+    #[cfg(windows)]
+    const EXITED_1: &str = "exit code: 1";
+
     /// A supervisor that fails before it serves (a full disk at its first
     /// write) fails the start at once with what it printed, not with the
     /// startup timeout and its `shutdown --force` advice.
@@ -732,10 +745,19 @@ mod tests {
     async fn a_supervisor_that_exits_before_it_serves_fails_the_start_with_its_error() {
         let dir = tempfile::tempdir().unwrap();
         let socket = dir.path().join("daemon.sock");
+        #[cfg(unix)]
         let mut command = Command::new("sh");
+        #[cfg(unix)]
         command.args([
             "-c",
             "echo 'Error: write /agent/supervisor-config.tmp-7: No space left on device (os error 28)' >&2; exit 1",
+        ]);
+        #[cfg(windows)]
+        let mut command = Command::new("cmd");
+        #[cfg(windows)]
+        command.args([
+            "/C",
+            "echo Error: write /agent/supervisor-config.tmp-7: No space left on device (os error 28)>&2& exit 1",
         ]);
         let launcher = ProcessLauncher::new(command, &socket, "eukhe shutdown --force");
         let started = Instant::now();
@@ -747,7 +769,7 @@ mod tests {
             ),
             (
                 format!(
-                    "The Eukhe daemon exited before it served {} (exit status: 1): Error: write /agent/supervisor-config.tmp-7: No space left on device (os error 28)",
+                    "The Eukhe daemon exited before it served {} ({EXITED_1}): Error: write /agent/supervisor-config.tmp-7: No space left on device (os error 28)",
                     socket.display()
                 ),
                 true

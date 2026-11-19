@@ -53,7 +53,6 @@ fn expand_tilde_os(value: &OsStr) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use std::ffi::OsString;
-    use std::os::unix::ffi::OsStrExt;
     use std::sync::Mutex;
 
     use super::*;
@@ -91,6 +90,7 @@ mod tests {
     /// Flag over env over default; `~` and relative paths on both the flag
     /// and the env; an empty env is no env. The default sits in the agent
     /// dir's run dir.
+    #[cfg(unix)]
     #[test]
     fn the_socket_is_the_flag_then_the_env_then_the_default() {
         let os = |value: &'static str| Some(OsStr::new(value));
@@ -140,6 +140,7 @@ mod tests {
 
     /// Without `HOME` a tilde path stays as written (relative, so under
     /// the cwd).
+    #[cfg(unix)]
     #[test]
     fn a_tilde_without_home_stays() {
         let cwd = std::env::current_dir().unwrap();
@@ -150,14 +151,76 @@ mod tests {
     }
 
     /// A non-UTF-8 env value names its socket by its own bytes.
+    #[cfg(unix)]
     #[test]
     fn a_non_utf8_env_socket_keeps_its_bytes() {
+        use std::os::unix::ffi::OsStrExt;
         let raw = OsStr::from_bytes(b"/env/\xff.sock");
         assert_eq!(
             with_env(&[(ENV_DAEMON_SOCKET, Some(raw))], || {
                 resolve_daemon_socket_path(None)
             }),
             PathBuf::from(raw)
+        );
+    }
+
+    /// Flag over env over default on Windows: `~` expands against
+    /// `USERPROFILE`, a path without a drive resolves against the cwd, and
+    /// the default sits in the agent dir's run dir in `%LOCALAPPDATA%`.
+    #[cfg(windows)]
+    #[test]
+    fn the_socket_is_the_flag_then_the_env_then_the_default_on_windows() {
+        let os = |value: &'static str| Some(OsStr::new(value));
+        let cwd = std::env::current_dir().unwrap();
+        let resolved = |env: Option<&OsStr>, explicit: Option<&str>| {
+            with_env(
+                &[
+                    (ENV_DAEMON_SOCKET, env),
+                    ("USERPROFILE", os(r"C:\Users\tester")),
+                    ("LOCALAPPDATA", os(r"C:\Users\tester\AppData\Local")),
+                    (eukhe_types::platform::dirs::ENV_AGENT_DIR, None),
+                ],
+                || resolve_daemon_socket_path(explicit.map(Path::new)),
+            )
+        };
+        let default = PathBuf::from(r"C:\Users\tester\AppData\Local\eukhe\run\daemon.sock");
+        assert_eq!(
+            [
+                resolved(os(r"C:\env\d.sock"), None),
+                resolved(os(r"C:\env\d.sock"), Some(r"C:\flag\d.sock")),
+                resolved(None, None),
+                resolved(os(""), None),
+                resolved(os("~/env.sock"), None),
+                resolved(os("~"), None),
+                resolved(None, Some(r"rel\flag.sock")),
+            ],
+            [
+                PathBuf::from(r"C:\env\d.sock"),
+                PathBuf::from(r"C:\flag\d.sock"),
+                default.clone(),
+                default,
+                PathBuf::from(r"C:\Users\tester\env.sock"),
+                PathBuf::from(r"C:\Users\tester"),
+                cwd.join(r"rel\flag.sock"),
+            ]
+        );
+    }
+
+    /// An env value that is not Unicode (an unpaired surrogate) names its
+    /// socket by its own code units.
+    #[cfg(windows)]
+    #[test]
+    fn a_non_unicode_env_socket_keeps_its_code_units() {
+        use std::os::windows::ffi::OsStringExt;
+        let mut wide: Vec<u16> = r"C:\env\".encode_utf16().collect();
+        wide.push(0xD800);
+        wide.extend(".sock".encode_utf16());
+        let raw = OsString::from_wide(&wide);
+        assert_eq!(
+            with_env(&[(ENV_DAEMON_SOCKET, Some(&raw))], || {
+                resolve_daemon_socket_path(None)
+            }),
+            PathBuf::from(&raw)
         );
     }
 }

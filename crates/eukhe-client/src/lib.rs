@@ -36,3 +36,5 @@ pub mod launcher;
 pub mod paths;
 pub mod restart;
 pub mod saved_sessions;
+#[cfg(test)]
+mod test_transport;

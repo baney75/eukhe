@@ -148,11 +148,11 @@ mod tests {
     use eukhe_types::daemon::SessionEvent;
     use serde_json::json;
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-    use tokio::net::UnixListener;
     use tokio::sync::mpsc;
 
     use super::*;
     use crate::daemon_client::{DaemonClientEvent, RequestRejected};
+    use crate::test_transport::Listener;
     use eukhe_types::budget::LimitValue;
 
     fn amounts(cost_micros: u64, tokens: u64) -> BudgetAmounts {
@@ -196,7 +196,7 @@ mod tests {
     /// budget commands. A command that changes the budget streams its
     /// `budget_update` ahead of its response. The session `empty` has no
     /// budget; the session `taken` has one already.
-    async fn serve(listener: UnixListener, seen: mpsc::UnboundedSender<Value>, report: Value) {
+    async fn serve(listener: Listener, seen: mpsc::UnboundedSender<Value>, report: Value) {
         let (stream, _) = listener.accept().await.expect("accept");
         let (reader, mut writer) = stream.into_split();
         let mut lines = BufReader::new(reader).lines();
@@ -264,7 +264,7 @@ mod tests {
     async fn the_budget_requests_send_the_wire_commands_and_read_the_typed_answers() {
         let dir = tempfile::TempDir::new().expect("tempdir");
         let socket = dir.path().join("d.sock");
-        let listener = UnixListener::bind(&socket).expect("bind");
+        let listener = Listener::bind(&socket).expect("bind");
         let (seen, mut commands) = mpsc::unbounded_channel();
         let (report, wire) = report();
         tokio::spawn(serve(listener, seen, wire));

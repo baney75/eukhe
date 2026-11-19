@@ -456,8 +456,8 @@ mod tests {
     fn ticket_json(expires_at: &str) -> (serde_json::Value, tempfile::TempDir) {
         let dir = tempfile::TempDir::new().unwrap();
         let socket = dir.path().join("worker.sock");
-        // A real socket file so the identity check has something to stat.
-        std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        // A real endpoint so the identity check has something to read.
+        crate::test_transport::stale_endpoint(&socket);
         let identity = eukhe_types::platform::socket_identity(&socket).unwrap();
         let ticket = json!({
             "purpose": "session_client",
@@ -475,7 +475,7 @@ mod tests {
     /// Minimal scripted worker used by the link tests: hello, one
     /// `peer_auth` response, then the process dies (the socket tears down
     /// the way a `SIGKILLed` worker does).
-    async fn spawn_mock_worker(listener: tokio::net::UnixListener) {
+    async fn spawn_mock_worker(listener: crate::test_transport::Listener) {
         let (stream, _) = listener.accept().await.expect("accept");
         let (reader, mut writer) = stream.into_split();
         let mut reader =
@@ -527,7 +527,7 @@ mod tests {
     ) {
         let dir = tempfile::TempDir::new().unwrap();
         let socket = dir.path().join("worker.sock");
-        let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+        let listener = crate::test_transport::Listener::bind(&socket).unwrap();
         let identity = eukhe_types::platform::socket_identity(&socket).unwrap();
         let ticket = DaemonPeerTransportTicket {
             purpose: "session_client".to_string(),
