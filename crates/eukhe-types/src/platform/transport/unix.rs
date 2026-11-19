@@ -662,6 +662,13 @@ pub fn unix_listener_definitely_closed(path: &Path) -> bool {
     }
 }
 
+/// Whether nothing listens at `path` for certain
+/// ([`unix_listener_definitely_closed`]).
+#[must_use]
+pub fn listener_definitely_closed(path: &Path) -> bool {
+    unix_listener_definitely_closed(path)
+}
+
 impl BlockingTransportStream for std::os::unix::net::UnixStream {
     fn try_clone_box(&self) -> std::io::Result<Box<dyn BlockingTransportStream>> {
         Ok(Box::new(self.try_clone()?))

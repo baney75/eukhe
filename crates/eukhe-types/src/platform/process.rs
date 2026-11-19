@@ -189,6 +189,26 @@ pub fn process_executable_path(pid: u32) -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
 }
 
+/// Windows: the image path sysinfo reads (`QueryFullProcessImageNameW`).
+/// A process the caller may not inspect stays `None`, the same
+/// best-effort contract as the Linux `/proc` read.
+#[cfg(windows)]
+#[must_use]
+pub fn process_executable_path(pid: u32) -> Option<std::path::PathBuf> {
+    use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    if pid == 0 {
+        return None;
+    }
+    let pid = Pid::from_u32(pid);
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::Always),
+    );
+    system.process(pid)?.exe().map(std::path::Path::to_path_buf)
+}
+
 // Suspend-to-background signal control (TS `handleCtrlZ`): the
 // interactive TUI stops its whole process group with SIGTSTP when the
 // user suspends it, with SIGINT ignored for the stopped window (a
@@ -998,8 +1018,11 @@ mod windows_tests {
                 is_process_alive(pid).expect("liveness"),
                 identity.as_deref().is_some_and(|id| id.starts_with("win:")),
                 process_start_id(pid) == identity,
+                process_executable_path(pid).is_some_and(|exe| exe
+                    .file_name()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("cmd.exe"))),
             ),
-            (true, true, true)
+            (true, true, true, true)
         );
         kill_process_tree(pid).expect("kill the tree");
         child.wait().expect("wait");
