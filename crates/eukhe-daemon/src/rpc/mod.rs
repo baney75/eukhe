@@ -227,19 +227,20 @@ async fn seed_startup_state(
 /// SIGTERM exits 143, SIGHUP 129 (the TS mode handles exactly this
 /// pair): abort the running turn, settle it, close the session, drain
 /// the queued frames, exit.
+///
+/// On Windows the pair is Ctrl+Break (the terminate a console sends) for
+/// 143 and the console's close for 129 (its hangup).
 fn spawn_signal_handlers(session: &Arc<RpcSession>, writer: &LineWriter) {
-    use tokio::signal::unix::{signal, SignalKind};
     for (kind, code) in [
-        (SignalKind::terminate(), SIGTERM_EXIT),
-        (SignalKind::hangup(), SIGHUP_EXIT),
+        (ExitSignal::Terminate, SIGTERM_EXIT),
+        (ExitSignal::Hangup, SIGHUP_EXIT),
     ] {
         let session = Arc::clone(session);
         let writer = writer.clone();
         tokio::spawn(async move {
-            let Ok(mut stream) = signal(kind) else {
+            if kind.delivered().await.is_err() {
                 return;
-            };
-            stream.recv().await;
+            }
             // Fire the shutdown broadcast FIRST: a replacement mid-settle
             // refuses instead of holding the lease across the model's
             // runtime, so the exit never queues behind
@@ -256,6 +257,45 @@ fn spawn_signal_handlers(session: &Arc<RpcSession>, writer: &LineWriter) {
             writer.drain_bounded().await;
             exit_with(code);
         });
+    }
+}
+
+/// The two signals that end an RPC session.
+#[derive(Clone, Copy)]
+enum ExitSignal {
+    /// SIGTERM; Windows: Ctrl+Break.
+    Terminate,
+    /// SIGHUP; Windows: the console closed.
+    Hangup,
+}
+
+impl ExitSignal {
+    /// Wait for the first delivery; an error when the handler cannot be
+    /// installed.
+    #[cfg(unix)]
+    async fn delivered(self) -> std::io::Result<()> {
+        use tokio::signal::unix::{signal, SignalKind};
+        let kind = match self {
+            Self::Terminate => SignalKind::terminate(),
+            Self::Hangup => SignalKind::hangup(),
+        };
+        signal(kind)?.recv().await;
+        Ok(())
+    }
+
+    /// Wait for the first delivery; an error when the handler cannot be
+    /// installed.
+    #[cfg(windows)]
+    async fn delivered(self) -> std::io::Result<()> {
+        match self {
+            Self::Terminate => {
+                tokio::signal::windows::ctrl_break()?.recv().await;
+            }
+            Self::Hangup => {
+                tokio::signal::windows::ctrl_close()?.recv().await;
+            }
+        }
+        Ok(())
     }
 }
 
