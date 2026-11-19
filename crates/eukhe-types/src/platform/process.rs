@@ -465,6 +465,44 @@ pub fn is_process_alive(pid: u32) -> anyhow::Result<bool> {
     Ok(lists_pid(&String::from_utf8_lossy(&output.stdout), pid))
 }
 
+/// Windows: ends `pid` and every process it started, by `taskkill /T /F`
+/// (absolute path in `%SystemRoot%`). Windows has no process groups, and
+/// holding a tree in a job object needs Win32 handles safe Rust cannot
+/// make: the tree is the one the processes' parent links name at the
+/// kill, so a child whose parent already exited is not reached.
+///
+/// # Errors
+///
+/// [`std::io::ErrorKind::NotFound`] when no process has the pid (taskkill
+/// exits 128); the error of the run, or [`std::io::ErrorKind::Other`] for
+/// another failing exit.
+#[cfg(windows)]
+pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
+    let root = std::env::var_os("SystemRoot").ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "SystemRoot is unset: taskkill cannot be found",
+        )
+    })?;
+    let output =
+        std::process::Command::new(std::path::Path::new(&root).join(r"System32\taskkill.exe"))
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(std::process::Stdio::null())
+            .output()?;
+    match output.status.code() {
+        Some(0) => Ok(()),
+        Some(128) => Err(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("no process {pid}"),
+        )),
+        Some(_) | None => Err(std::io::Error::other(format!(
+            "taskkill of {pid} failed ({}): {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))),
+    }
+}
+
 /// Whether `tasklist /FO CSV /NH` output has a row of `pid`: its second
 /// field (`"<image>","<pid>",...`), read as CSV, so an image name with a
 /// comma or a quote in it keeps its row whole.
