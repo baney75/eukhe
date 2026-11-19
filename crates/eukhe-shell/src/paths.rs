@@ -125,5 +125,6 @@ pub fn judge_path(policy: &PathPolicy, absolute: &Path) -> Judged {
     judge(policy, &resolve(absolute))
 }
 
-#[cfg(test)]
+// The tests build their trees from symlinks: Unix only.
+#[cfg(all(test, unix))]
 mod tests;
