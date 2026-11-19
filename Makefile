@@ -250,10 +250,12 @@ package:
 # test_models_dev.py): the generated asset passes the full packer
 # validation, the packer hard-fails on missing/invalid assets, the asset
 # lands in the tarball layout the binary expects, and the models.dev
-# mapping and its committed fixture agree.
+# mapping and its committed fixture agree; test_release_archives.py: the
+# tarball and the Windows zip assemble, verify and repack byte for byte.
 catalog-assets-gates:
 	python3 .github/scripts/release/test_catalog_assets.py
 	python3 .github/scripts/release/test_models_dev.py
+	python3 .github/scripts/release/test_release_archives.py
 
 # Eukhe's package lock: eukhe-runtime/uv.lock (the `kernel` group, resolved
 # for the pinned Python of eukhe-runtime/kernel-toolchain.json) exported to
