@@ -27,8 +27,8 @@
 //! roster alone — while the saved catalog keeps every dead row resumable
 //! under the parent's collapsed tree.
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -120,8 +120,8 @@ fn spawn_supervisor(dir: &Path) -> Supervisor {
 /// The client the agents view stands in for: a JSONL protocol client that
 /// keeps every `roster_update` push it reads while awaiting a response.
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
     roster_updates: Vec<Value>,
 }
 

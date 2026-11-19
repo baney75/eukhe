@@ -1,3 +1,5 @@
+// The terminal checks drive a Unix pty and termios: Unix only.
+#![cfg(unix)]
 // The Tier-C/D ruling (fleet-uniform, 2026-09-28): stack-resident futures by
 // design on hot paths; 64-bit targets - the narrowing sits at OS/protocol
 // boundaries where the values are bounded (pid syscalls, epoch/elapsed

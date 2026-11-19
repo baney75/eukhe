@@ -1507,6 +1507,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn socket_close_reports_daemon_closing_reason() {
         use std::io::{BufRead, Write};

@@ -4,6 +4,8 @@
 //! description, Tab completes it and lists its words, `set ` lists the
 //! budget keys, `ti` + Tab completes `time=` with the ghost hint of its
 //! value, and `/effects ran ` lists the session's real effect id.
+// The terminal checks drive a Unix pty and termios: Unix only.
+#![cfg(unix)]
 
 use std::io::{BufRead, Read, Write};
 use std::os::fd::{AsRawFd, OwnedFd};

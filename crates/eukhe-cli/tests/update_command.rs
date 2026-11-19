@@ -1,6 +1,8 @@
 //! `eukhe update` against a local release stub (`EUKHE_RELEASES_URL`): an
 //! install laid out as install.sh lays it out, a fake release (tarball,
 //! SHA256SUMS, release.json), and the installs the command refuses.
+// eukhe update installs through the shell launcher, which Windows has none of: Unix only.
+#![cfg(unix)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::io::{BufRead, BufReader, Write};

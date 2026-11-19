@@ -1,3 +1,5 @@
+// The checks signal the daemon tree through nix (SIGKILL, SIGSTOP) and read inodes: Unix only.
+#![cfg(unix)]
 // The Tier-C/D ruling (fleet-uniform, 2026-09-28): stack-resident futures
 // by design on hot paths (boxing 130 fns is allocation-churn with zero
 // correctness gain); the fn-length threshold is a style gate, not

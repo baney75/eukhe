@@ -531,6 +531,7 @@ fn rpc_parse_and_unknown_command_errors() {
 /// and withdraws the queued inputs (the durable `Conversation.abort()`:
 /// queued inputs are withdrawn, the ordinary scope settles); the next
 /// prompt runs alone.
+#[cfg(unix)]
 #[test]
 fn rpc_steer_and_follow_up_queue_then_abort() {
     // The first turn's request holds at the provider on a gate this test

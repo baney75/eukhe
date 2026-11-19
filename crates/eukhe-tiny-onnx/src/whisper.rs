@@ -4,7 +4,8 @@
 //! <|notimestamps|>` prompt.
 
 mod mel;
-#[cfg(test)]
+// The round trip lays out the installed model copy with Unix symlinks.
+#[cfg(all(test, unix))]
 mod round_trip_tests;
 
 use std::collections::BTreeMap;

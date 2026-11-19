@@ -273,7 +273,8 @@ async fn stop_socket_holder(socket_path: &Path, why: &str) -> Result<()> {
     }
 }
 
-#[cfg(test)]
+// The refused-dir case is built from Unix permission bits.
+#[cfg(all(test, unix))]
 mod tests {
     use std::os::unix::fs::PermissionsExt as _;
 

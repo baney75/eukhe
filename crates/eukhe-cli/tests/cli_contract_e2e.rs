@@ -203,6 +203,7 @@ fn empty_results_are_silent_success_or_plain_zero_lines() {
 
 /// Piped management tables keep the terminal's space-padded columns: no
 /// tabs, the header padded to its column.
+#[cfg(unix)]
 #[test]
 fn piped_tables_stay_space_padded() {
     let fixture = Fixture::new("piped-tables");
@@ -242,6 +243,7 @@ fn piped_tables_stay_space_padded() {
 
 /// `status --json` and `doctor --json` print the services as a top-level
 /// array (no wrapping object), each row with its pid and status.
+#[cfg(unix)]
 #[test]
 fn status_and_doctor_json_are_the_service_array() {
     let fixture = Fixture::new("status-json");

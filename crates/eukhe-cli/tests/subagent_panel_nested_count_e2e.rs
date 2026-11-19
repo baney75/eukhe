@@ -26,8 +26,8 @@
 //! `collectSubagentDescendantSummaries`) counts the whole subtree at any
 //! depth, and the agents dock's `N subagents` row aggregates the tree.
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -58,8 +58,8 @@ fn spawn_supervisor(dir: &Path) -> Daemon {
 
 /// Minimal JSONL supervisor client (`roster_subscribe` / list).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

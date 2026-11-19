@@ -1,3 +1,5 @@
+// The lock ages through nix utimensat: Unix only.
+#![cfg(unix)]
 // The Tier-C/D ruling (fleet-uniform, 2026-09-28): stack-resident futures
 // by design on hot paths (boxing 130 fns is allocation-churn with zero
 // correctness gain); the fn-length threshold is a style gate, not

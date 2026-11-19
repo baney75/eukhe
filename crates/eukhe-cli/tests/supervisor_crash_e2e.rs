@@ -7,6 +7,8 @@
 //! The test has its own binary: the relaunched supervisor inherits this
 //! process's environment (its agent dir), which a shared test binary
 //! could change under it.
+// The checks signal the daemon tree through nix (SIGKILL, SIGSTOP) and read inodes: Unix only.
+#![cfg(unix)]
 // Pedantic-gate dispositions for THIS test root: the crash flow is one
 // linear harness script (the fn-length gate is style, not correctness),
 // and its async test future is stack-resident by shape (boxing it for a

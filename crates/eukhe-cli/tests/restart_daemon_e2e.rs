@@ -1,3 +1,5 @@
+// The checks signal the daemon tree through nix (SIGKILL, SIGSTOP) and read inodes: Unix only.
+#![cfg(unix)]
 // Harness fns are linear scripts.
 #![allow(clippy::too_many_lines)]
 
