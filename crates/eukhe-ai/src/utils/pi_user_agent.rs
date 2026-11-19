@@ -6,6 +6,7 @@ use std::sync::LazyLock;
 fn node_platform() -> &'static str {
     match std::env::consts::OS {
         "macos" => "darwin",
+        "windows" => "win32",
         other => other,
     }
 }
@@ -20,11 +21,41 @@ fn node_arch() -> &'static str {
 }
 
 /// Node `os.release()`: the kernel release (`uname -r`).
-fn node_release() -> String {
+#[cfg(unix)]
+pub(crate) fn node_release() -> String {
     rustix::system::uname()
         .release()
         .to_string_lossy()
         .into_owned()
+}
+
+/// Node `os.release()` on Windows: `<major>.<minor>.<build>`, read from
+/// the `[Version 10.0.26100.1234]` line `cmd /c ver` prints (safe Rust
+/// has no version query); empty when `ver` cannot run.
+#[cfg(windows)]
+pub(crate) fn node_release() -> String {
+    std::process::Command::new("cmd")
+        .args(["/d", "/c", "ver"])
+        .output()
+        .map(|output| windows_release(&String::from_utf8_lossy(&output.stdout)))
+        .unwrap_or_default()
+}
+
+/// The `<major>.<minor>.<build>` of a `ver` banner.
+#[cfg(any(windows, test))]
+fn windows_release(banner: &str) -> String {
+    banner
+        .split_once("Version ")
+        .and_then(|(_, rest)| rest.split(']').next())
+        .map(|version| {
+            version
+                .trim()
+                .split('.')
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(".")
+        })
+        .unwrap_or_default()
 }
 
 /// The user agent, computed once per process.
@@ -53,5 +84,13 @@ mod tests {
         assert!(agent.starts_with(&format!("pi ({} ", node_platform())));
         assert!(agent.ends_with(&format!("; {})", node_arch())));
         assert!(!node_release().is_empty());
+    }
+
+    #[test]
+    fn windows_release_is_major_minor_build() {
+        assert_eq!(
+            windows_release("\r\nMicrosoft Windows [Version 10.0.26100.4652]\r\n"),
+            "10.0.26100"
+        );
     }
 }

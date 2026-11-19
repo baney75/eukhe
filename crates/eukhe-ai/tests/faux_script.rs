@@ -488,12 +488,17 @@ async fn aborting_during_the_delay_ends_the_stream_aborted() {
 async fn hold_until_released_holds_the_request_until_the_gate_closes() {
     let dir = tempfile::TempDir::new().expect("temp dir");
     let gate = dir.path().join("gate.sock");
-    let listener = tokio::net::UnixListener::bind(&gate).expect("bind the gate");
+    let listener = eukhe_types::platform::transport::bind_transport(
+        &gate,
+        eukhe_bend::rules::fsmode::peer_verdict,
+    )
+    .await
+    .expect("bind the gate");
     let (models, faux) = scripted(&json!({
         "responses": [{ "text": "released", "holdUntilReleased": gate }],
     }));
     let call = tokio::spawn(async move { complete(&models, &faux).await });
-    let (held, _) = listener
+    let held = listener
         .accept()
         .await
         .expect("the request reaches the gate");
