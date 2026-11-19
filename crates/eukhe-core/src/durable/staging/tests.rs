@@ -17,6 +17,7 @@ fn age(path: &Path, age: Duration) {
 }
 
 /// A fresh staging directory for the session `name` under `sessions`.
+#[cfg(unix)]
 fn staging(sessions: &Path, name: &str, kind: StagingKind) -> PathBuf {
     let (parent, staging) = staging_dir(&sessions.join(name), kind).expect("staging dir");
     assert_eq!(parent, sessions);
@@ -40,6 +41,7 @@ fn names(dir: &Path) -> Vec<String> {
     names
 }
 
+#[cfg(unix)]
 fn name(path: &Path) -> String {
     path.file_name()
         .expect("name")
@@ -47,6 +49,7 @@ fn name(path: &Path) -> String {
         .into_owned()
 }
 
+#[cfg(unix)]
 #[test]
 fn sweeps_only_staging_dirs_and_tombstones_untouched_past_the_bound() {
     let dir = tempfile::tempdir().expect("tempdir");

@@ -1,7 +1,10 @@
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::sync::atomic::AtomicU64;
 
-use eukhe_docs::{Access, Documents, WriteError};
+use eukhe_docs::Access;
+#[cfg(unix)]
+use eukhe_docs::{Documents, WriteError};
 use eukhe_types::path_policy::{resolve, PathClass};
 use eukhe_types::shell::{AutoSet, ShellEffect};
 
@@ -131,6 +134,7 @@ fn every_state_part_is_protected_or_secret() {
 /// Outside (`laws/path_policy/policy.bend`, `Pp.class`). The gate judged a second
 /// resolution of `ws/x`, which lost the loop: the write ran unasked as
 /// Inside.
+#[cfg(unix)]
 #[test]
 fn a_write_whose_links_looped_asks_even_when_its_real_path_is_inside() {
     let dir = tempfile::tempdir().unwrap();

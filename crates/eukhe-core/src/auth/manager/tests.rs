@@ -174,6 +174,7 @@ fn fallback_resolver_last_resort() {
 
 /// The bytes and the mode of a file: the two things a refused write must
 /// not change.
+#[cfg(unix)]
 fn file_state(path: &std::path::Path) -> (Vec<u8>, u32) {
     use std::os::unix::fs::PermissionsExt;
     // Read the mode with `metadata` and the bytes after a chmod to 0600,
@@ -191,6 +192,7 @@ fn api_key(key: &str) -> AuthCredential {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn set_over_an_unreadable_auth_file_is_refused_and_writes_nothing() {
     use std::os::unix::fs::PermissionsExt;
@@ -249,6 +251,7 @@ fn set_over_an_unreadable_auth_file_is_refused_and_writes_nothing() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn set_over_an_invalid_auth_file_is_refused_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();

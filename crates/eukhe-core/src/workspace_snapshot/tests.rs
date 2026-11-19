@@ -14,6 +14,7 @@ use super::{
     verify_workspace_snapshot, Baseline, BaselineMode, CapturedEntry, ExcludeReason, ExcludedEntry,
     LeafOutcome, SnapshotError, SnapshotLimits, SnapshotManifest,
 };
+#[cfg(unix)]
 use super::{open_leaf, OpenLeaf};
 
 fn git(dir: &Path, args: &[&str]) {
@@ -353,6 +354,7 @@ async fn snapshot_excludes_secret_named_files_in_delta_and_baseline() {
     assert!(verify_workspace_snapshot(staging.path()).is_ok());
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn snapshot_captures_in_root_symlinks_and_excludes_escaping_ones() {
     let repo = tempfile::tempdir().unwrap();
@@ -394,6 +396,7 @@ async fn snapshot_captures_in_root_symlinks_and_excludes_escaping_ones() {
     assert!(verify_workspace_snapshot(staging.path()).is_ok());
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn snapshot_never_reads_behind_symlinked_ancestors() {
     let repo = tempfile::tempdir().unwrap();
@@ -1054,6 +1057,7 @@ async fn snapshot_rejects_unusable_staging_directories() {
     assert!(staging.join("manifest.json").is_file());
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn untracked_special_paths_never_block_the_leaf_open() {
     // Regression guard: a plain read-only open of a FIFO (or a unix
@@ -1097,6 +1101,7 @@ async fn untracked_special_paths_never_block_the_leaf_open() {
     assert!(verify_workspace_snapshot(staging.path()).is_ok());
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn staging_and_staged_files_are_owner_private() {
     let repo = tempfile::tempdir().unwrap();
@@ -1179,6 +1184,7 @@ async fn snapshot_from_a_subdirectory_captures_the_whole_repository() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn snapshot_records_executable_bits() {
     let repo = tempfile::tempdir().unwrap();
@@ -1221,6 +1227,7 @@ async fn snapshot_records_executable_bits() {
     assert!(!executable("plain.txt"));
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn head_tree_baseline_restates_head_mode_under_core_filemode_false() {
     use std::os::unix::fs::PermissionsExt;

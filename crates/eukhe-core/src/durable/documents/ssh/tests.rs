@@ -3,6 +3,8 @@
 //! command through `sh -c` in a temporary home, as a real remote shell
 //! does, so a path that holds shell syntax shows that the quoting keeps
 //! it one word.
+// The fake ssh is a shell script: Unix only.
+#![cfg(unix)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};

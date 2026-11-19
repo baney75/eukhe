@@ -1,16 +1,21 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::check::detect;
-use super::trust::{config_root, trusted_dirs, trusted_value, TRUSTED_CONFIG_PATHS};
+#[cfg(unix)]
+use super::tool_env;
+#[cfg(unix)]
+use super::trust::TRUSTED_CONFIG_PATHS;
+use super::trust::{config_root, trusted_dirs, trusted_value};
 use super::{
-    files, run_check, tool_env, unit_of, unit_patch, CheckConfig, CheckOutcome, CheckReport,
-    CheckRun, ChildWorkspace, GitView, Listing, ScopedHandback, TreeStamp, WorkspaceDrift, BASE,
-    CONFLICTS, HANDBACK,
+    files, run_check, unit_of, unit_patch, CheckConfig, CheckOutcome, CheckReport, CheckRun,
+    ChildWorkspace, GitView, Listing, ScopedHandback, TreeStamp, WorkspaceDrift, BASE, CONFLICTS,
+    HANDBACK,
 };
 use eukhe_types::daemon::agent_tree::CheckPhase;
 
@@ -363,6 +368,7 @@ async fn a_hand_back_takes_the_childs_changes_and_reports_conflicts() {
 /// byte for byte, each doc above its own item; the second child's change
 /// of the same file is a conflict kept whole under `conflicts/`, and its
 /// change of another file reaches the parent byte for byte.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_hand_back_keeps_each_doc_above_its_item_or_reports_the_conflict() {
     let dir = tempfile::tempdir().unwrap();
@@ -1014,6 +1020,7 @@ fn trust_show_lines_name_the_trusted_directories() {
 /// A `mise` stand-in in `dir`: `trust --show` reports the directory it
 /// runs in trusted, except under a `sub` directory, which it reports
 /// untrusted (with its trusted parent).
+#[cfg(unix)]
 fn fake_mise(dir: &Path) -> PathBuf {
     let program = dir.join("mise");
     fs::write(
@@ -1028,6 +1035,7 @@ fn fake_mise(dir: &Path) -> PathBuf {
 }
 
 /// The value a command in the copy gets: `trusted`, then the host's own.
+#[cfg(unix)]
 fn with_host_trust(trusted: &Path) -> String {
     match std::env::var(TRUSTED_CONFIG_PATHS) {
         Ok(host) if !host.is_empty() => format!("{}:{host}", trusted.display()),
@@ -1041,6 +1049,7 @@ fn with_host_trust(trusted: &Path) -> String {
 /// trust of what the parent trusts (only that: `sub/mise.toml`, untrusted
 /// in the parent, stays untrusted), its node check runs with it, and the
 /// hand-back ends it.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_childs_copy_keeps_the_mise_trust_its_parent_has() {
     let dir = tempfile::tempdir().unwrap();
@@ -1099,6 +1108,7 @@ async fn a_childs_copy_keeps_the_mise_trust_its_parent_has() {
 
 /// A parent that trusts nothing, or no mise to ask, gives the copy no
 /// trust.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_copy_of_an_untrusted_or_unasked_parent_trusts_nothing() {
     let dir = tempfile::tempdir().unwrap();

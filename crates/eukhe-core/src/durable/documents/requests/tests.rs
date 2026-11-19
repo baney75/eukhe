@@ -315,6 +315,7 @@ async fn file_urls_read_under_their_root() {
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn urls_the_session_cannot_serve_are_typed_rejections() {
     let dir = tempfile::tempdir().unwrap();

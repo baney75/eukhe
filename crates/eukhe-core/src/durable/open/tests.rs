@@ -1750,6 +1750,7 @@ async fn the_read_tool_reads_mcp_resources() {
 
 /// A session dir that an older eukhe made with the umask (0755) is made
 /// private (0700) when the session opens.
+#[cfg(unix)]
 #[tokio::test]
 async fn open_makes_an_existing_session_dir_private() {
     use std::os::unix::fs::PermissionsExt;

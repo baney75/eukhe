@@ -218,6 +218,7 @@ async fn normal_protocol_lines_still_stream_through_the_bounded_reader() {
     .await;
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn multi_mib_blank_protocol_line_is_read_in_linear_time() {
     // A 31 MiB blank line arrives in pipe reads of at most 64 KiB; rescanning
@@ -253,6 +254,7 @@ async fn multi_mib_blank_protocol_line_is_read_in_linear_time() {
 }
 
 /// The user + system CPU this test process (every thread) has used.
+#[cfg(unix)]
 fn process_cpu_time() -> Duration {
     use nix::sys::resource::{getrusage, UsageWho};
     let usage = getrusage(UsageWho::RUSAGE_SELF).expect("getrusage(RUSAGE_SELF)");

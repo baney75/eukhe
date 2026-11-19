@@ -1,3 +1,6 @@
+// The trees carry Unix modes and symbolic links: Unix only.
+#![cfg(unix)]
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
