@@ -8,6 +8,10 @@ description = "Local tiny models: the pinned catalog, the explicit download, the
 
 [dependencies]
 eukhe-build-info = { path = "../eukhe-build-info" }
+# The worker socket's platform transport (a named pipe on Windows), file
+# modes and the worker's creation flags; the tests' worker children run
+# without its agent dir variable.
+eukhe-types = { workspace = true }
 # The pick and the election's run (and a started worker's seat) run as the
 # compiled Bend core (bend/ffi_tiny.bend, bend/ffi_tiny_run.bend).
 eukhe-bend.workspace = true
@@ -24,8 +28,6 @@ sha2 = "0.10"
 
 [dev-dependencies]
 tempfile = "3"
-# The tests' worker children run without the agent dir variable.
-eukhe-types = { workspace = true }
 
 [lints]
 workspace = true
