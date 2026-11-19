@@ -488,11 +488,29 @@ pub fn is_process_alive(pid: u32) -> anyhow::Result<bool> {
 ///
 /// # Errors
 ///
+/// See [`kill_process`].
+#[cfg(windows)]
+pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
+    taskkill(pid, &["/T", "/F", "/PID"])
+}
+
+/// Windows: ends `pid` alone, by `taskkill /F` (absolute path in
+/// `%SystemRoot%`). A console process has no graceful stop a safe call
+/// can send, so the end is immediate.
+///
+/// # Errors
+///
 /// [`std::io::ErrorKind::NotFound`] when no process has the pid (taskkill
 /// exits 128); the error of the run, or [`std::io::ErrorKind::Other`] for
 /// another failing exit.
 #[cfg(windows)]
-pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
+pub fn kill_process(pid: u32) -> std::io::Result<()> {
+    taskkill(pid, &["/F", "/PID"])
+}
+
+/// Runs `taskkill <flags> <pid>`.
+#[cfg(windows)]
+fn taskkill(pid: u32, flags: &[&str]) -> std::io::Result<()> {
     let root = std::env::var_os("SystemRoot").ok_or_else(|| {
         std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -501,7 +519,8 @@ pub fn kill_process_tree(pid: u32) -> std::io::Result<()> {
     })?;
     let output =
         std::process::Command::new(std::path::Path::new(&root).join(r"System32\taskkill.exe"))
-            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .args(flags)
+            .arg(pid.to_string())
             .stdin(std::process::Stdio::null())
             .output()?;
     match output.status.code() {
