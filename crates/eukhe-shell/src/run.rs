@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::future::Future;
 use std::io::{Read, Write as _};
+#[cfg(unix)]
 use std::os::fd::OwnedFd;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -21,6 +22,7 @@ use std::process::Stdio;
 use eukhe_bend::rules::shell::{self as gate, Answered, Gate, Part, Said};
 use eukhe_types::path_policy::{resolve, PathClass, PathPolicy};
 use eukhe_types::shell::{AutoSet, ShellEffect, ShellEffects};
+#[cfg(unix)]
 use tokio::io::AsyncReadExt as _;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -217,17 +219,23 @@ enum Builtin {
 
 /// Kills an external command's process group when the command is
 /// dropped before it ended (a killed script), so every process it
-/// started stops and the script's pipes close.
+/// started stops and the script's pipes close. Windows: its process tree
+/// (`kill_process_tree`).
 struct GroupKill(Option<i32>);
 
 impl Drop for GroupKill {
     fn drop(&mut self) {
         if let Some(group) = self.0 {
             // A group already gone has nothing left to kill.
+            #[cfg(unix)]
             let _ = nix::sys::signal::killpg(
                 nix::unistd::Pid::from_raw(group),
                 nix::sys::signal::Signal::SIGKILL,
             );
+            #[cfg(windows)]
+            if let Ok(pid) = u32::try_from(group) {
+                let _ = eukhe_types::platform::process::kill_process_tree(pid);
+            }
         }
     }
 }
@@ -245,8 +253,20 @@ pub struct Shell {
     external: PathBuf,
 }
 
+/// A pipe end as the file a child's stream takes.
+fn pipe_file(end: impl Into<PipeHandle>) -> File {
+    File::from(end.into())
+}
+
+/// The owned OS handle of a pipe end.
+#[cfg(unix)]
+type PipeHandle = OwnedFd;
+#[cfg(windows)]
+type PipeHandle = std::os::windows::io::OwnedHandle;
+
 /// A pipe whose read end streams to the sink as `stream` of `step`; the
 /// write end.
+#[cfg(unix)]
 fn capture(
     step: u64,
     stream: Stream,
@@ -278,7 +298,45 @@ fn capture(
             }
         }
     });
-    Ok(File::from(OwnedFd::from(writer)))
+    Ok(pipe_file(writer))
+}
+
+/// A pipe whose read end streams to the sink as `stream` of `step`; the
+/// write end. Windows: tokio reads no anonymous pipe, so a blocking
+/// thread reads it.
+#[cfg(windows)]
+fn capture(
+    step: u64,
+    stream: Stream,
+    chunks: &mpsc::Sender<Chunk>,
+    readers: &mut JoinSet<()>,
+) -> std::io::Result<File> {
+    use std::io::Read as _;
+    let (mut reader, writer) = std::io::pipe()?;
+    let chunks = chunks.clone();
+    readers.spawn_blocking(move || {
+        let mut buffer = vec![0u8; 16 * 1024];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => return,
+                Ok(read) => {
+                    let chunk = Chunk {
+                        step,
+                        stream,
+                        bytes: buffer[..read].to_vec(),
+                    };
+                    if chunks.blocking_send(chunk).is_err() {
+                        return;
+                    }
+                }
+                Err(error) => {
+                    tracing::debug!(%error, step, "reading a step's output failed");
+                    return;
+                }
+            }
+        }
+    });
+    Ok(pipe_file(writer))
 }
 
 impl Shell {
@@ -653,8 +711,8 @@ impl Shell {
                 Ok(Target::Capture(Stream::Stdout))
             } else {
                 std::io::pipe().map(|(reader, writer)| {
-                    next_stdin = Some(File::from(OwnedFd::from(reader)));
-                    Target::Open(File::from(OwnedFd::from(writer)))
+                    next_stdin = Some(pipe_file(reader));
+                    Target::Open(pipe_file(writer))
                 })
             }
             .map_err(|source| WireError::Pipe { source })
@@ -886,7 +944,7 @@ async fn command(argv: Vec<String>, env: Vec<(String, String)>, cwd: PathBuf, wi
     let program = &argv[0];
     // A relative path names a file under the shell's directory, not
     // under this process's.
-    let path = if program.contains('/') {
+    let path = if program.contains(std::path::is_separator) {
         cwd.join(program)
     } else {
         PathBuf::from(program)
@@ -907,8 +965,9 @@ async fn command(argv: Vec<String>, env: Vec<(String, String)>, cwd: PathBuf, wi
             .stdin(stdin.map_or_else(Stdio::null, Stdio::from))
             .stdout(Stdio::from(stdout))
             .stderr(Stdio::from(stderr))
-            .process_group(0)
             .kill_on_drop(true);
+        #[cfg(unix)]
+        command.process_group(0);
         // The command keeps the streams' descriptors until it drops.
         command.spawn()
     };
@@ -963,5 +1022,6 @@ fn exit_status(status: std::process::ExitStatus) -> i32 {
     }
 }
 
-#[cfg(test)]
+// The tests build their trees from sh scripts and a `:`-separated PATH: Unix only.
+#[cfg(all(test, unix))]
 mod tests;
