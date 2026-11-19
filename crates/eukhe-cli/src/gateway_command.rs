@@ -139,11 +139,9 @@ pub fn run_gateway_command(args: &[String]) -> i32 {
 /// service manager keeps supervising it). Returns only when the start
 /// failed.
 fn start_again(exe: &std::path::Path, args: &[String]) -> std::io::Error {
-    use std::os::unix::process::CommandExt as _;
-    std::process::Command::new(exe)
-        .arg("gateway")
-        .args(args)
-        .exec()
+    crate::replace_process::replace_process(
+        std::process::Command::new(exe).arg("gateway").args(args),
+    )
 }
 
 /// The gateway configuration from the global settings, the session-dir

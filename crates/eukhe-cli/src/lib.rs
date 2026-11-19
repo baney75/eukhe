@@ -62,6 +62,7 @@ pub(crate) mod prompt_command;
 pub(crate) mod provider_command;
 pub(crate) mod provider_login;
 pub(crate) mod public_command;
+pub(crate) mod replace_process;
 pub(crate) mod sanitize;
 pub(crate) mod session_export;
 pub(crate) mod sessions_table_format;

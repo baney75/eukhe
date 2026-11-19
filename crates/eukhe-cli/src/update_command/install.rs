@@ -170,6 +170,7 @@ fn installer_install(exe: &Path, places: &Places) -> Option<Installer> {
 }
 
 /// The launcher install.sh writes for `payload`: the script, byte for byte.
+#[cfg(unix)]
 pub(super) fn launcher_script(payload: &Path) -> String {
     format!(
         "#!/bin/sh\n# eukhe launcher written by install.sh; the payload sits beside itself\nexec \"{}/eukhe\" \"$@\"\n",
