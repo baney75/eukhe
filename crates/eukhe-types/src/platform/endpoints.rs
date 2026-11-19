@@ -250,7 +250,7 @@ mod tests {
         drop(listener);
         // The Linux census has kept a closed listener a moment on CI
         // runners (cargo test, other tests running beside it): it is
-        // asked again until a deadline.
+        // asked again every 10 ms until a deadline.
         #[cfg(any(target_os = "linux", windows))]
         {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -259,7 +259,7 @@ mod tests {
                 if seen == (false, Vec::<PathBuf>::new()) || std::time::Instant::now() > deadline {
                     break seen;
                 }
-                tokio::task::yield_now().await;
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
             };
             assert_eq!(gone, (false, Vec::<PathBuf>::new()));
         }
