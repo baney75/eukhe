@@ -465,13 +465,37 @@ pub fn is_process_alive(pid: u32) -> anyhow::Result<bool> {
     Ok(lists_pid(&String::from_utf8_lossy(&output.stdout), pid))
 }
 
-/// Whether `tasklist /FO CSV /NH` output has a row of `pid` (its second
-/// field: `"<image>","<pid>",...`).
-#[cfg(windows)]
+/// Whether `tasklist /FO CSV /NH` output has a row of `pid`: its second
+/// field (`"<image>","<pid>",...`), read as CSV, so an image name with a
+/// comma or a quote in it keeps its row whole.
+#[cfg(any(windows, test))]
 fn lists_pid(csv: &str, pid: u32) -> bool {
-    let field = format!("\"{pid}\"");
+    let pid = pid.to_string();
     csv.lines()
-        .any(|row| row.split(',').nth(1) == Some(field.as_str()))
+        .any(|row| csv_fields(row).get(1).is_some_and(|field| *field == pid))
+}
+
+/// The fields of one CSV row: a quoted field may hold commas, and `""` in
+/// it is one quote.
+#[cfg(any(windows, test))]
+fn csv_fields(row: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut chars = row.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, quoted) {
+            ('"', true) if chars.peek() == Some(&'"') => {
+                field.push('"');
+                chars.next();
+            }
+            ('"', _) => quoted = !quoted,
+            (',', false) => fields.push(std::mem::take(&mut field)),
+            (c, _) => field.push(c),
+        }
+    }
+    fields.push(field);
+    fields
 }
 
 /// A process named by its pid and, where the platform exposes one, its
@@ -807,6 +831,32 @@ mod executable_path_tests {
             "the own pid must resolve to the running executable ({resolved:?} vs {current:?})"
         );
         assert_eq!(process_executable_path(0), None);
+    }
+}
+
+/// The tasklist rows liveness reads (Windows), checked on every platform.
+#[cfg(test)]
+mod tasklist_tests {
+    use super::*;
+
+    /// An image name with a comma or a quote keeps its row whole: the pid
+    /// is its second field.
+    #[test]
+    fn a_row_is_read_by_its_csv_fields() {
+        let rows = "\"my,tool.exe\",\"4120\",\"Console\",\"1\",\"9,120 K\"\r\n\
+                    \"say \"\"hi\"\".exe\",\"88\",\"Services\",\"0\",\"1,024 K\"\r\n";
+        assert_eq!(
+            (
+                lists_pid(rows, 4120),
+                lists_pid(rows, 88),
+                lists_pid(rows, 120)
+            ),
+            (true, true, false)
+        );
+        assert_eq!(
+            csv_fields("\"say \"\"hi\"\".exe\",\"88\""),
+            vec!["say \"hi\".exe".to_owned(), "88".to_owned()]
+        );
     }
 }
 
