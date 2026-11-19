@@ -502,12 +502,10 @@ fn retry_delay_ms(error: &SdkError, error_type: RetryErrorType, retry_count: u32
 fn user_agent(bearer: bool) -> String {
     let platform = match std::env::consts::OS {
         "macos" => "darwin",
+        "windows" => "win32",
         other => other,
     };
-    let release = rustix::system::uname()
-        .release()
-        .to_string_lossy()
-        .into_owned();
+    let release = crate::utils::pi_user_agent::node_release();
     let features = if bearer { "N,E" } else { "N,E,e" };
     format!(
         "aws-sdk-js/{SDK_VERSION} ua/2.1 os/{platform}#{release} lang/rust api/bedrock-runtime#{SDK_VERSION} m/{features}"

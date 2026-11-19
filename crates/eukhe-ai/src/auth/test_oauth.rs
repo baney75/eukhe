@@ -8,9 +8,9 @@
 //! temp file and an atomic rename.
 
 use std::io::Write as _;
-use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 
+use eukhe_types::platform::mode::CreationMode as _;
 use serde_json::{Map, Value};
 
 use super::errors::date_now;
@@ -77,7 +77,7 @@ pub(crate) async fn resolve_api_key(
             .create(true)
             .truncate(false)
             .write(true)
-            .mode(0o600)
+            .creation_mode(0o600)
             .open(&lock_path)
             .map_err(lock_error)?;
         lock.lock().map_err(lock_error)?;
