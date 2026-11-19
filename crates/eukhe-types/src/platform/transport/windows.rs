@@ -537,7 +537,7 @@ pub async fn listener_pid(path: &Path, _rules: PeerRules) -> std::io::Result<Opt
 /// own; clones share the client, the runtime and the read deadline, as
 /// clones of a socket do.
 #[derive(Debug, Clone)]
-struct BlockingPipe {
+pub struct BlockingPipe {
     /// Declared before the runtime: it drops first, while its runtime runs.
     client: Arc<NamedPipeClient>,
     runtime: Arc<tokio::runtime::Runtime>,
@@ -551,6 +551,36 @@ fn on_runtime_thread() -> std::io::Error {
 }
 
 impl BlockingPipe {
+    /// A second handle on the same pipe (std's `try_clone`): reads and
+    /// writes can go on separate threads.
+    ///
+    /// # Errors
+    ///
+    /// None: the handles share one pipe.
+    pub fn try_clone(&self) -> std::io::Result<Self> {
+        Ok(self.clone())
+    }
+
+    /// Deadline each later read (std's `set_read_timeout`): a read past it
+    /// fails with `WouldBlock`; `None` waits without one.
+    ///
+    /// # Errors
+    ///
+    /// A zero timeout (`InvalidInput`, as std's).
+    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
+        if timeout.is_some_and(|timeout| timeout.is_zero()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "a zero read timeout",
+            ));
+        }
+        *self
+            .read_timeout
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = timeout;
+        Ok(())
+    }
+
     /// Run `io` on the stream's runtime until it completes.
     fn drive<T>(
         &self,
@@ -616,19 +646,12 @@ impl BlockingTransportStream for BlockingPipe {
     }
 
     fn set_read_timeout(&self, timeout: Duration) -> std::io::Result<()> {
-        if timeout.is_zero() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "a zero read timeout",
-            ));
-        }
-        *self
-            .read_timeout
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(timeout);
-        Ok(())
+        BlockingPipe::set_read_timeout(self, Some(timeout))
     }
 }
+
+/// The blocking stream [`connect_std`] answers: a pipe end on Windows.
+pub type StdStream = BlockingPipe;
 
 /// Connect to the endpoint at `path`, blocking until connected. The
 /// endpoint file and the pipe's DACL take the place of `rules` (module
@@ -643,6 +666,18 @@ pub fn connect_blocking(
     path: &Path,
     _rules: PeerRules,
 ) -> std::io::Result<Box<dyn BlockingTransportStream>> {
+    Ok(Box::new(connect_std(path)?))
+}
+
+/// Connect to the endpoint at `path`, blocking until connected, with no
+/// rule (as on Unix): the pipe's DACL decides who serves it. Off any tokio
+/// runtime's thread: the stream waits on a runtime of its own.
+///
+/// # Errors
+///
+/// Nothing listens at `path`, the open fails, the stream's runtime cannot
+/// start, or the caller runs on a tokio runtime's thread.
+pub fn connect_std(path: &Path) -> std::io::Result<StdStream> {
     if tokio::runtime::Handle::try_current().is_ok() {
         return Err(on_runtime_thread());
     }
@@ -667,11 +702,11 @@ pub fn connect_blocking(
             }
         }
     };
-    Ok(Box::new(BlockingPipe {
+    Ok(BlockingPipe {
         client: Arc::new(client),
         runtime: Arc::new(runtime),
         read_timeout: Arc::new(Mutex::new(None)),
-    }))
+    })
 }
 
 #[cfg(test)]

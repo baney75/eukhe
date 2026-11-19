@@ -402,6 +402,9 @@ fn no_endpoint(error: std::io::Error) -> std::io::Error {
     }
 }
 
+/// The blocking stream [`connect_std`] answers: a Unix socket.
+pub type StdStream = std::os::unix::net::UnixStream;
+
 /// [`connect_tokio`], blocking.
 ///
 /// # Errors
