@@ -1,7 +1,10 @@
 //! The client of a model's worker: finds, starts, joins or replaces it
 //! ([`crate::election`]), then sends it one request.
 
+#[cfg(unix)]
 use std::os::unix::process::CommandExt;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::Stdio;
 
@@ -245,8 +248,13 @@ pub(crate) async fn spawn_detached(
         .append(true)
         .open(&log)
         .map_err(|error| spawn(format!("cannot open {}: {error}", log.display())))?;
+    // Its own process group: the terminal's (Windows: the console's)
+    // Ctrl+C never reaches the worker.
+    #[cfg(unix)]
+    command.process_group(0);
+    #[cfg(windows)]
+    command.creation_flags(eukhe_types::platform::process::CREATE_NEW_PROCESS_GROUP);
     command
-        .process_group(0)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr);

@@ -2,8 +2,8 @@
 //! `<agent dir>/models/tiny/<id>/`, worker sockets, bind locks and logs
 //! under `<agent dir>/run/tiny/`.
 
+use eukhe_types::platform::mode::{set_mode, CreationMode as _};
 use std::io;
-use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 /// The worker backend (one worker per model and backend).
@@ -64,9 +64,9 @@ impl TinyHome {
     pub(crate) fn create_run_dir(&self) -> io::Result<()> {
         std::fs::DirBuilder::new()
             .recursive(true)
-            .mode(0o700)
+            .creation_mode(0o700)
             .create(&self.run)?;
-        std::fs::set_permissions(&self.run, std::fs::Permissions::from_mode(0o700))
+        set_mode(&self.run, 0o700)
     }
 
     /// The install dir of a model.

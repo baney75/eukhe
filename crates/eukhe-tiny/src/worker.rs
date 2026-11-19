@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::watch;
 use tokio::task::JoinSet;
 use tokio::time::Instant;
@@ -19,6 +18,7 @@ use crate::election::{seat, Seated};
 use crate::engine::{Engine, EngineFactory, EngineOptions};
 use crate::paths::{Backend, TinyHome};
 use crate::protocol::{read_line, Line, Reply, Request, Response, WorkerFailure, MAX_LINE_BYTES};
+use crate::socket::{accept, split, Listener, Served, ServedWrite};
 
 /// The idle window without `--idle-secs`.
 const DEFAULT_IDLE_SECS: u64 = 900;
@@ -278,7 +278,7 @@ pub(crate) enum Bound {
 
 /// A bound worker socket.
 pub(crate) struct Listening {
-    listener: UnixListener,
+    listener: Listener,
     socket: PathBuf,
 }
 
@@ -325,7 +325,7 @@ pub(crate) async fn bind(
         Seated::Adopt => Ok(Bound::Adopted),
         Seated::Take(lock) => {
             remove_socket(&socket)?;
-            let listener = UnixListener::bind(&socket)?;
+            let listener = Listener::bind(&socket)?;
             drop(lock);
             Ok(Bound::Listening(Listening { listener, socket }))
         }
@@ -474,8 +474,8 @@ pub(crate) async fn serve(
         let now = Instant::now();
         let deadline = deadline(&activity, idle, now);
         tokio::select! {
-            accepted = listener.accept() => match accepted {
-                Ok((stream, _)) => { connections.spawn(connection(Arc::clone(&shared), stream)); }
+            accepted = accept(&listener) => match accepted {
+                Ok(stream) => { connections.spawn(connection(Arc::clone(&shared), stream)); }
                 Err(error) => { remove_socket(&shared.socket)?; return Err(error); }
             },
             _ = closing.wait_for(|state| *state == Serving::Closing) => break,
@@ -583,10 +583,7 @@ async fn answer(
 }
 
 /// Writes `response` as one line.
-async fn write_response(
-    write: &mut tokio::net::unix::OwnedWriteHalf,
-    response: &Response,
-) -> io::Result<()> {
+async fn write_response(write: &mut ServedWrite, response: &Response) -> io::Result<()> {
     let mut line = Vec::with_capacity(256);
     serde_json::to_writer(&mut line, response).map_err(io::Error::other)?;
     line.push(b'\n');
@@ -597,8 +594,8 @@ async fn write_response(
 /// Serves one client connection: one response line per request line, in
 /// order.
 #[tracing::instrument(level = "debug", skip_all)]
-async fn connection(shared: Arc<Shared>, stream: UnixStream) {
-    let (read, mut write) = stream.into_split();
+async fn connection(shared: Arc<Shared>, stream: Served) {
+    let (read, mut write) = split(stream);
     let mut reader = BufReader::new(read);
     let mut closing = shared.closing.subscribe();
     loop {
@@ -634,8 +631,12 @@ async fn connection(shared: Arc<Shared>, stream: UnixStream) {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
     use std::os::unix::ffi::OsStringExt;
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(windows)]
+    use std::os::windows::ffi::OsStringExt;
     use std::sync::mpsc;
 
     use super::*;
@@ -846,6 +847,7 @@ mod tests {
     }
 
     /// A run dir that exists with looser permissions is made 0700.
+    #[cfg(unix)]
     #[tokio::test]
     async fn binding_makes_an_existing_run_dir_private() {
         let dir = tempfile::tempdir().unwrap();
@@ -926,7 +928,11 @@ mod tests {
             idle_window(17, Ok("23".to_owned())).0,
             Duration::from_millis(23)
         );
+        #[cfg(unix)]
         let non_unicode = std::ffi::OsString::from_vec(vec![0xff]);
+        // A lone surrogate is no Unicode.
+        #[cfg(windows)]
+        let non_unicode = std::ffi::OsString::from_wide(&[0xd800]);
         assert_eq!(
             idle_window(17, Err(std::env::VarError::NotUnicode(non_unicode))).0,
             Duration::from_secs(17)

@@ -15,6 +15,7 @@ mod engine;
 mod paths;
 mod protocol;
 mod roles;
+mod socket;
 mod tasks;
 #[cfg(test)]
 mod testing;

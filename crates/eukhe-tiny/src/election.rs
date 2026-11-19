@@ -16,13 +16,12 @@ use std::path::Path;
 use eukhe_bend::wire::{Reader, WireError, Writer, STR_MAX};
 use eukhe_bend::{expect_core, Entry, Error, Stepper};
 use tokio::io::{AsyncWriteExt, BufReader};
-use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
-use tokio::net::UnixStream;
 
 use crate::catalog::{installed, CatalogModel};
 use crate::client::TinyError;
 use crate::paths::{Backend, TinyHome};
 use crate::protocol::{read_line, Line, Reply, Request, Response, MAX_LINE_BYTES};
+use crate::socket::{connect, ClientRead, ClientWrite};
 
 /// The backend every worker runs on.
 pub(crate) const BACKEND: Backend = Backend::Onnx;
@@ -66,8 +65,8 @@ pub(crate) trait Launcher: Sync {
 /// One client connection to a worker: [`Request`] lines out, one
 /// [`Response`] line back for each.
 pub(crate) struct Connection {
-    reader: BufReader<OwnedReadHalf>,
-    writer: OwnedWriteHalf,
+    reader: BufReader<ClientRead>,
+    writer: ClientWrite,
 }
 
 /// Why a call to a worker got no response: the socket failed, the worker
@@ -289,11 +288,10 @@ fn after_ping(connection: Connection, answer: Result<Response, CallError>) -> Me
 /// Connects to `socket` and pings it; what it met.
 #[tracing::instrument(level = "debug")]
 pub(crate) async fn probe(socket: &Path) -> Met {
-    let stream = match UnixStream::connect(socket).await {
-        Ok(stream) => stream,
+    let (read, writer) = match connect(socket).await {
+        Ok(halves) => halves,
         Err(error) => return connect_failure(error),
     };
-    let (read, writer) = stream.into_split();
     let mut connection = Connection {
         reader: BufReader::new(read),
         writer,
@@ -754,9 +752,33 @@ mod tests {
     use super::*;
     use crate::testing::ECHO;
 
+    #[cfg(unix)]
     fn connection() -> Connection {
-        let (stream, _peer) = UnixStream::pair().unwrap();
+        let (stream, _peer) = tokio::net::UnixStream::pair().unwrap();
         let (read, writer) = stream.into_split();
+        Connection {
+            reader: BufReader::new(read),
+            writer,
+        }
+    }
+
+    /// A connection over a fresh named pipe whose server end is dropped,
+    /// as the Unix pair's peer is.
+    #[cfg(windows)]
+    fn connection() -> Connection {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        use tokio::net::windows::named_pipe::{ClientOptions, ServerOptions};
+        static COUNT: AtomicU64 = AtomicU64::new(0);
+        let name = format!(
+            r"\\.\pipe\eukhe-tiny-test-{}-{}",
+            std::process::id(),
+            COUNT.fetch_add(1, Ordering::Relaxed)
+        );
+        let _peer = ServerOptions::new()
+            .first_pipe_instance(true)
+            .create(&name)
+            .unwrap();
+        let (read, writer) = tokio::io::split(ClientOptions::new().open(&name).unwrap());
         Connection {
             reader: BufReader::new(read),
             writer,
