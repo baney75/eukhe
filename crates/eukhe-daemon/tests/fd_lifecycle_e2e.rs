@@ -28,10 +28,10 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
+use eukhe_types::platform::transport::StdStream;
 use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -139,8 +139,8 @@ fn spawn_daemon(mut launcher: Command, socket: &Path, agent_dir: &Path) -> Daemo
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {
@@ -474,7 +474,7 @@ fn is_kernel_process(pid: u32) -> bool {
         && process_alive(pid)
 }
 
-fn read_exact_timeout(stream: &mut UnixStream, buffer: &mut [u8], deadline: Instant) {
+fn read_exact_timeout(stream: &mut StdStream, buffer: &mut [u8], deadline: Instant) {
     use std::io::Read as _;
     let mut read = 0usize;
     while read < buffer.len() {

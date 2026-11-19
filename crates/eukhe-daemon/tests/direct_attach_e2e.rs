@@ -31,8 +31,8 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -63,8 +63,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Daemon {
 
 /// JSONL supervisor client (command envelopes, id-matched responses).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {
@@ -132,7 +132,7 @@ impl Client {
 
 /// A raw private-frame client for the session worker's own socket.
 struct WorkerClient {
-    stream: UnixStream,
+    stream: StdStream,
 }
 
 impl WorkerClient {
@@ -203,6 +203,7 @@ impl WorkerClient {
 
     /// The next session-event frame payload, or `None` once the connection
     /// is closed.
+    #[cfg(unix)]
     fn next_event(&mut self, timeout: Duration) -> Option<Value> {
         let deadline = Instant::now() + timeout;
         loop {
@@ -215,7 +216,7 @@ impl WorkerClient {
     }
 }
 
-fn read_exact_timeout(stream: &mut UnixStream, buffer: &mut [u8], deadline: Instant) {
+fn read_exact_timeout(stream: &mut StdStream, buffer: &mut [u8], deadline: Instant) {
     let mut read = 0usize;
     while read < buffer.len() {
         assert!(Instant::now() < deadline, "worker frame read timed out");
@@ -230,7 +231,9 @@ fn read_exact_timeout(stream: &mut UnixStream, buffer: &mut [u8], deadline: Inst
     }
 }
 
-/// The persisted worker descriptor's live identity fields.
+/// The persisted worker descriptor's live identity fields (the instance id
+/// is read only by the Unix-only restart case).
+#[cfg_attr(windows, allow(dead_code))]
 struct WorkerIdentity {
     socket_path: PathBuf,
     worker_instance_id: String,
@@ -278,6 +281,7 @@ fn peer_auth(worker: &mut WorkerClient, ticket: &Value) -> Value {
     )
 }
 
+#[cfg(unix)]
 #[test]
 fn direct_attach_ticket_streams_across_supervisor_kill9() {
     let dir = tempfile::TempDir::new().expect("temp dir");

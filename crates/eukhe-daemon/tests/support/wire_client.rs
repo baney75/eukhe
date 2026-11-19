@@ -6,7 +6,6 @@
 #![allow(dead_code)] // each including test binary uses its own subset
 
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -31,7 +30,7 @@ impl Shared {
 }
 
 pub struct WireClient {
-    writer: UnixStream,
+    writer: Box<dyn eukhe_types::platform::transport::BlockingTransportStream>,
     shared: Arc<Shared>,
     next_id: u64,
 }
@@ -39,9 +38,12 @@ pub struct WireClient {
 impl WireClient {
     /// Connect and read the hello.
     pub fn connect(socket: &Path) -> WireClient {
-        let stream =
-            eukhe_types::platform::transport::connect_std(socket).expect("connect the supervisor");
-        let reader = stream.try_clone().expect("clone the socket");
+        let stream = eukhe_types::platform::transport::connect_blocking(
+            socket,
+            eukhe_bend::rules::server_peer::PEER_RULES,
+        )
+        .expect("connect the supervisor");
+        let reader = stream.try_clone_box().expect("clone the socket");
         let shared = Arc::new(Shared {
             lines: Mutex::new(Lines::default()),
             changed: Condvar::new(),

@@ -75,7 +75,12 @@ pub fn wait_socket_file(socket: &Path, timeout: Duration) {
 /// not readiness).
 pub fn wait_socket_accepts(socket: &Path, timeout: Duration) {
     let deadline = Instant::now() + timeout;
-    while eukhe_types::platform::transport::connect_std(socket).is_err() {
+    while eukhe_types::platform::transport::connect_blocking(
+        socket,
+        eukhe_bend::rules::server_peer::PEER_RULES,
+    )
+    .is_err()
+    {
         assert!(
             Instant::now() < deadline,
             "socket {} never came up",
@@ -113,6 +118,12 @@ pub fn stop_daemon_tree(supervisor: &mut Child, socket: &Path) {
     } else {
         Vec::new()
     };
+    // Windows: the supervisor's tree (its workers and what they started)
+    // goes in one `taskkill /T` while the supervisor still parents it.
+    #[cfg(windows)]
+    if running {
+        let _ = eukhe_types::platform::process::kill_process_tree(supervisor.id());
+    }
     let _ = supervisor.kill();
     let _ = supervisor.wait();
     #[cfg(target_os = "linux")]

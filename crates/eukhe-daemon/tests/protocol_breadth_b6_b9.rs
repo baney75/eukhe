@@ -3,8 +3,8 @@
 //! rides the real supervisor + worker over the socket and answers the
 //! exact TS wire shape (success and error paths), the same harness the
 //! supervisor e2e suite uses.
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -34,8 +34,8 @@ fn spawn_daemon(socket: &std::path::Path, agent_dir: &std::path::Path) -> Daemon
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 #[allow(dead_code)]
@@ -633,6 +633,7 @@ fn wave_b9_session_navigation_wire_shapes() {
 
 /// Wave b9: the prompt-admission surface - the parse-time registration
 /// errors, the cancel status ladder, and the cancelled queued prompt.
+#[cfg(unix)]
 #[test]
 fn wave_b9_prompt_admission_wire_shapes() {
     let _serial = serial_lock();

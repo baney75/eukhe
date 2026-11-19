@@ -24,8 +24,8 @@
 // scenario top to bottom.
 #![allow(clippy::too_many_lines)]
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
@@ -111,8 +111,8 @@ fn connect(socket: &Path) -> Client {
 
 /// JSONL supervisor client (command envelopes, id-matched responses).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

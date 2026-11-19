@@ -8,8 +8,8 @@
 //! from an ancestor environment) and the dead-worker rebind on the create
 //! path (the #2575 supersede, driven by an open of the superseded file),
 //! and the create's budget on an open of a live session.
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -40,8 +40,8 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path, poison_lease_owner: Option<&str
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

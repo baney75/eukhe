@@ -10,9 +10,9 @@
 //! write and a run of a program at once and refuses a write of eukhe's own
 //! config at once.
 
+use eukhe_types::platform::transport::StdStream;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -35,8 +35,8 @@ const PHONE_SCRIPT: &str = "echo one > written.txt\nsh -c 'echo two > ran.txt'\n
 /// JSONL supervisor client that keeps the `shell_approval` frames it
 /// reads while it waits for a response.
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
     approvals: VecDeque<Value>,
 }
 

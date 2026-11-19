@@ -275,8 +275,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Daemon {
 /// One client connection: request/response plus every session event that
 /// streamed while the response was outstanding.
 struct Client {
-    reader: BufReader<std::os::unix::net::UnixStream>,
-    writer: std::os::unix::net::UnixStream,
+    reader: BufReader<eukhe_types::platform::transport::StdStream>,
+    writer: eukhe_types::platform::transport::StdStream,
     events: Vec<Value>,
 }
 
@@ -974,7 +974,7 @@ fn stored_goal(dir: &Path) -> Value {
 /// events must stream live on this path (the per-connection fan-out writes
 /// while the routed command is still in flight).
 struct DirectClient {
-    stream: std::os::unix::net::UnixStream,
+    stream: eukhe_types::platform::transport::StdStream,
 }
 
 impl DirectClient {
@@ -1072,7 +1072,7 @@ impl DirectClient {
 /// One frame read with a soft deadline: `None` when no complete
 /// frame arrives in time (a worker close still panics mid-frame).
 fn read_exact_soft(
-    stream: &mut std::os::unix::net::UnixStream,
+    stream: &mut eukhe_types::platform::transport::StdStream,
     buffer: &mut [u8],
     deadline: Instant,
 ) -> Option<()> {

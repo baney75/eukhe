@@ -15,8 +15,8 @@
 // passivation flow is one intentionally linear harness script (the
 // fn-length gate is style, not correctness).
 #![allow(clippy::too_many_lines)]
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
@@ -75,8 +75,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Daemon {
 
 /// JSONL supervisor client (command envelopes, id-matched responses).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {
@@ -842,6 +842,7 @@ async fn an_idle_root_passivates_and_resumes_by_its_durable_id_with_its_transcri
 
 /// Create a root session over the faux `script` and attach `client` to
 /// it; answers its active and durable ids.
+#[cfg(unix)]
 fn create_attached(
     client: &mut Client,
     name: &str,
@@ -883,6 +884,7 @@ fn create_attached(
 }
 
 /// Wait until `pid` left the process table, at most `budget`.
+#[cfg(unix)]
 async fn wait_gone(pid: u32, budget: Duration, what: &str) {
     let deadline = Instant::now() + budget;
     while process_present(pid) {
@@ -896,6 +898,7 @@ async fn wait_gone(pid: u32, budget: Duration, what: &str) {
 /// left grace, not after the 90-minute idle threshold (a left session is
 /// not kept running), and resumes by its durable id with its transcript.
 /// A left root with a turn in flight keeps its worker until the turn ends.
+#[cfg(unix)]
 #[tokio::test]
 async fn a_root_left_for_another_session_releases_its_worker_once_idle() {
     let dir = tempfile::TempDir::new().expect("temp dir");

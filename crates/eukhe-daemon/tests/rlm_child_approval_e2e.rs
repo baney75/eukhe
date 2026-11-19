@@ -5,8 +5,8 @@
 //! subagent, and its approval lets the step run.
 #![cfg(unix)]
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -31,8 +31,8 @@ const CHILD_SESSION_ID: &str = "0b000000-0000-4000-8000-00000000000b";
 
 /// A JSONL supervisor client: the user's client attached to the root.
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

@@ -32,8 +32,8 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -69,8 +69,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Daemon {
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {
@@ -176,7 +176,7 @@ impl Client {
 /// A raw private-frame client for one session worker's own socket (the
 /// worker serves direct connections even while no supervisor exists).
 struct WorkerClient {
-    stream: UnixStream,
+    stream: StdStream,
 }
 
 impl WorkerClient {
@@ -246,7 +246,7 @@ impl WorkerClient {
     }
 }
 
-fn read_exact_timeout(stream: &mut UnixStream, buffer: &mut [u8], deadline: Instant) {
+fn read_exact_timeout(stream: &mut StdStream, buffer: &mut [u8], deadline: Instant) {
     let mut read = 0usize;
     while read < buffer.len() {
         assert!(Instant::now() < deadline, "worker frame read timed out");
