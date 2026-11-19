@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Assemble eukhe release tarballs.
+"""Assemble eukhe release archives.
 
 The per-target packaging step of `.github/workflows/eukhe-release.yml`: stage
 the release binary plus the bundled kernel runtime, skills, and license
-metadata into a scratch tree, pack a deterministic tarball with files at the
-tarball root, and emit `SHA256SUMS` plus a `manifest.json` (archive sha256,
+metadata into a scratch tree, pack a deterministic archive with files at the
+archive root (a tarball, a zip on Windows), and emit `SHA256SUMS` plus a `manifest.json` (archive sha256,
 executable sha256, platform alias, target triple, Linux decoder facts).
 
 Usage:
@@ -20,7 +20,8 @@ asset (`models.bundled.json`, made from the committed models.dev snapshot by
 transport tuples).
 
 `--binary` defaults to `<repo>/target/<target>/dist/eukhe` (cross builds of
-the dist profile) and falls back to `<repo>/target/dist/eukhe` (host builds).
+the dist profile) and falls back to `<repo>/target/dist/eukhe` (host builds);
+Windows targets name `eukhe.exe`.
 `--decoder` is the split-debug sidecar from split_debug.py, required (with an
 explicit `--binary`) on Linux targets and rejected elsewhere.
 `--runtime-dir` defaults to `<repo>/eukhe-runtime` (the vendored sidecar
@@ -29,7 +30,10 @@ from the kernel-packaging lane).
 Archive naming: `eukhe-<version>-<platform-alias>.tar.gz` (e.g.
 `eukhe-0.1.0-linux-x64.tar.gz`) — the asset name the release workflow
 publishes and records per Nix system in `nix/release.json`, whose tarball
-layout `nix/package.nix` installs. The target triple stays in the manifest
+layout `nix/package.nix` installs. Windows ships
+`eukhe-<version>-windows-x64.zip` (the same payload, `eukhe.exe` at the zip
+root), published beside the tarballs and listed in SHA256SUMS, outside
+`nix/release.json` (no Nix system). The target triple stays in the manifest
 entry's `target` field (provenance, SBOM keying).
 """
 
@@ -46,6 +50,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import zipfile
 from pathlib import Path
 
 # The bundled-catalog validation gate (same release-scripts directory).
@@ -54,6 +59,7 @@ from runtime_lock import LockError, read_runtime_lock
 
 # Tarball-root payload: the exe-adjacent layout the binary resolves at
 # runtime, and the one `nix/package.nix` copies into its payload directory.
+# Windows names the binary `eukhe.exe` (binary_name).
 BINARY_NAME = "eukhe"
 STAGED_ENTRIES = [
     BINARY_NAME,
@@ -99,7 +105,33 @@ TARGET_ALIASES = {
     "x86_64-unknown-linux-gnu": "linux-x64",
     "aarch64-unknown-linux-gnu": "linux-arm64",
     "aarch64-apple-darwin": "darwin-arm64",
+    "x86_64-pc-windows-msvc": "windows-x64",
 }
+
+# A zip's earliest representable timestamp: every member carries it, the
+# zip counterpart of the tarball's mtime 0.
+ZIP_EPOCH = (1980, 1, 1, 0, 0, 0)
+
+
+def is_windows(target: str) -> bool:
+    return "-windows-" in target
+
+
+def binary_name(target: str) -> str:
+    """The shipped executable's name: `eukhe`, `eukhe.exe` on Windows."""
+    return f"{BINARY_NAME}.exe" if is_windows(target) else BINARY_NAME
+
+
+def staged_entries(target: str) -> list[str]:
+    """The archive-root payload of `target` (STAGED_ENTRIES, its binary name)."""
+    return [binary_name(target) if entry == BINARY_NAME else entry
+            for entry in STAGED_ENTRIES]
+
+
+def archive_name(version: str, target: str) -> str:
+    """`eukhe-<version>-<alias>.tar.gz`, `.zip` on Windows."""
+    suffix = ".zip" if is_windows(target) else ".tar.gz"
+    return f"eukhe-{version}-{TARGET_ALIASES[target]}{suffix}"
 
 VERSION_RE = re.compile(r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$")
 
@@ -132,11 +164,13 @@ def fail_if_decoder_in_tree(staging: Path) -> None:
 
 
 def fail_if_decoder_in_archive(archive_path: Path) -> None:
-    with tarfile.open(archive_path, "r:gz") as archive:
-        offenders = sorted(
-            m.name for m in archive.getmembers()
-            if decoder_like(Path(m.name))
-        )
+    if archive_path.suffix == ".zip":
+        with zipfile.ZipFile(archive_path) as archive:
+            names = archive.namelist()
+    else:
+        with tarfile.open(archive_path, "r:gz") as archive:
+            names = [m.name for m in archive.getmembers()]
+    offenders = sorted(name for name in names if decoder_like(Path(name)))
     if offenders:
         archive_path.unlink(missing_ok=True)
         fail(
@@ -176,17 +210,18 @@ def parse_args() -> argparse.Namespace:
 
 
 def resolve_binary(args: argparse.Namespace) -> Path:
+    name = binary_name(args.target)
     candidates = []
     if args.binary is not None:
         candidates.append(args.binary)
     else:
-        candidates.append(args.repo_root / "target" / args.target / "dist" / BINARY_NAME)
-        candidates.append(args.repo_root / "target" / "dist" / BINARY_NAME)
+        candidates.append(args.repo_root / "target" / args.target / "dist" / name)
+        candidates.append(args.repo_root / "target" / "dist" / name)
     for candidate in candidates:
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return candidate
     listed = ", ".join(str(candidate) for candidate in candidates)
-    fail(f"no executable {BINARY_NAME} binary found (looked at: {listed}); build first")
+    fail(f"no executable {name} binary found (looked at: {listed}); build first")
 
 
 def validate_version(version: str) -> None:
@@ -218,9 +253,10 @@ def stage_tree(staging: Path, args: argparse.Namespace) -> dict:
     verbatim copy.
     """
     binary = resolve_binary(args)
+    binary_entry = binary_name(args.target)
     runtime_dir = args.runtime_dir or (args.repo_root / "eukhe-runtime")
     sources = {
-        BINARY_NAME: binary,
+        binary_entry: binary,
         "eukhe-runtime": runtime_dir,
         "skills": args.repo_root / "skills",
         "LICENSE": args.repo_root / "LICENSE",
@@ -256,7 +292,7 @@ def stage_tree(staging: Path, args: argparse.Namespace) -> dict:
             shutil.copy2(source, target_path)
     # Executable for the `--version` probes (the tar member filter re-pins
     # the mode in the archive).
-    os.chmod(staging / BINARY_NAME, 0o755)
+    os.chmod(staging / binary_entry, 0o755)
     # The bundled catalog asset gate (spec §3.9): the release packer FAILS
     # without a validated asset — generate it first via
     # .github/scripts/release/bundle_catalog.py.
@@ -270,12 +306,12 @@ def stage_tree(staging: Path, args: argparse.Namespace) -> dict:
     catalog_facts = validate_bundled_catalog_dir(catalog_assets)
     for name in BUNDLED_CATALOG_FILES:
         shutil.copyfile(catalog_assets / name, staging / name)
-    payload = list(STAGED_ENTRIES)
+    payload = staged_entries(args.target)
     # The payload guard runs on the staged tree BEFORE packing: a decoder
     # sidecar staged by a later change fails here, not in the field.
     fail_if_decoder_in_tree(staging)
     return {
-        "executable_sha256": sha256_file(staging / BINARY_NAME),
+        "executable_sha256": sha256_file(staging / binary_entry),
         "payload": payload,
         "catalog_assets": catalog_facts,
     }
@@ -330,6 +366,42 @@ def pack_tarball(staging: Path, out_path: Path, entries: list[str]) -> None:
     except ValueError as error:
         out_path.unlink(missing_ok=True)
         fail(str(error))
+
+
+def pack_zip(staging: Path, out_path: Path, entries: list[str], binary: str) -> None:
+    """Deterministic zip with files at the zip root: sorted members, the
+    ZIP_EPOCH timestamp, Unix modes 0644/0755 (the binary 0755), deflate,
+    no links (the zip counterpart of `pack_tarball`).
+    """
+    staging_abs = staging.resolve()
+    members: list[tuple[str, Path]] = []
+    for name in sorted(entries):
+        path = staging_abs / name
+        members.append((name, path))
+        if path.is_dir():
+            for child in sorted(path.rglob("*")):
+                members.append((child.relative_to(staging_abs).as_posix(), child))
+    with zipfile.ZipFile(out_path, "w") as archive:
+        for name, path in members:
+            if path.is_symlink():
+                archive.close()
+                out_path.unlink(missing_ok=True)
+                fail(
+                    f"zip payload contains a link entry {name!r}; "
+                    "the release payload must be plain files and directories"
+                )
+            if path.is_dir():
+                info = zipfile.ZipInfo(f"{name}/", date_time=ZIP_EPOCH)
+                info.external_attr = (0o40755 << 16) | 0x10
+                info.create_system = 3
+                archive.writestr(info, b"")
+                continue
+            info = zipfile.ZipInfo(name, date_time=ZIP_EPOCH)
+            mode = 0o755 if name == binary else 0o644
+            info.external_attr = (0o100000 | mode) << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            archive.writestr(info, path.read_bytes())
 
 
 def debug_sections(binary: Path) -> list[str]:
@@ -395,11 +467,12 @@ def main() -> int:
     staging = Path(tempfile.mkdtemp(prefix="eukhe-archive-"))
     try:
         facts = stage_tree(staging, args)
-        archive_name = (
-            f"eukhe-{args.version}-{TARGET_ALIASES[args.target]}.tar.gz"
-        )
-        archive_path = out_dir / archive_name
-        pack_tarball(staging, archive_path, facts["payload"])
+        archive_file = archive_name(args.version, args.target)
+        archive_path = out_dir / archive_file
+        if is_windows(args.target):
+            pack_zip(staging, archive_path, facts["payload"], binary_name(args.target))
+        else:
+            pack_tarball(staging, archive_path, facts["payload"])
         # The packed archive is the published artifact: assert it carries
         # no decoder sidecar before anything records its hash.
         fail_if_decoder_in_archive(archive_path)
@@ -415,7 +488,7 @@ def main() -> int:
         "version": f"v{args.version}",
         "platform": TARGET_ALIASES[args.target],
         "target": args.target,
-        "file": archive_name,
+        "file": archive_file,
         "sha256": archive_sha256,
         "executableSha256": facts["executable_sha256"],
     }
