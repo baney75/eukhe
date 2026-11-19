@@ -248,8 +248,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, trace_path: &Path) -> Daemo
 }
 
 struct TimedClient {
-    reader: BufReader<std::os::unix::net::UnixStream>,
-    writer: std::os::unix::net::UnixStream,
+    reader: BufReader<eukhe_types::platform::transport::StdStream>,
+    writer: eukhe_types::platform::transport::StdStream,
     /// Every parked session event with its wire arrival time.
     events: Vec<(Value, Instant)>,
 }

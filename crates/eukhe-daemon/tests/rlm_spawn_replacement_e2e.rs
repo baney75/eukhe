@@ -48,8 +48,8 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
@@ -99,8 +99,8 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
 
 /// Minimal JSONL supervisor client (list).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

@@ -23,9 +23,9 @@
 //! The provider is a local always-200 OpenAI-completions mock, so a
 //! wrongly-booted session would run its turn and fail these asserts
 //! loudly (the resume-positive half needs it anyway).
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -150,8 +150,8 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path) -> Daemon {
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

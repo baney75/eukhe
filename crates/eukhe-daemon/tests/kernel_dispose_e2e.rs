@@ -22,8 +22,8 @@
 //! its own supervisor's workers started (found while the supervisor
 //! lives, so a kernel orphaned by the leak stays followed), so the kernels
 //! of other runs on the same box never interfere.
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -115,8 +115,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, lost_window_ms: &str) -> Da
 
 /// JSONL supervisor client (command envelopes, id-matched responses).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

@@ -8,8 +8,8 @@
 //! preparation with the failure on its (captured) stderr, and the
 //! supervisor's probe budget runs out against a dead worker — no
 //! test-only fault hook, just the real bind path failing.
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -36,8 +36,8 @@ fn spawn_daemon(socket: &Path, agent_dir: &Path, (key, value): (&str, &str)) -> 
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

@@ -39,8 +39,8 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -105,8 +105,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path, script: &Path) -> Daemon {
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
     events: Vec<Value>,
 }
 

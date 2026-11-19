@@ -38,7 +38,7 @@ fn spawn_supervisor(binary: &Path, socket: &Path, agent_dir: &Path) -> Daemon {
     )
 }
 
-fn read_line(reader: &mut BufReader<std::os::unix::net::UnixStream>) -> Value {
+fn read_line(reader: &mut BufReader<eukhe_types::platform::transport::StdStream>) -> Value {
     let mut line = String::new();
     loop {
         let read = reader.read_line(&mut line).expect("read supervisor line");

@@ -26,8 +26,9 @@
     clippy::struct_excessive_bools,
     clippy::struct_field_names
 )]
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
+#[cfg(unix)]
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
@@ -46,6 +47,8 @@ mod create;
 mod event_order;
 mod lifecycle;
 mod read_goldens;
+// The exit paths are driven by kill(1) signals and a process-table walk.
+#[cfg(unix)]
 mod shutdown;
 mod side_questions;
 mod tool_results;
@@ -67,8 +70,8 @@ fn spawn_daemon(socket: &std::path::Path, agent_dir: &std::path::Path) -> Daemon
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

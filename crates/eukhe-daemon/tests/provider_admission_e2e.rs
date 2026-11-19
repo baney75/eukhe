@@ -10,10 +10,10 @@
 //! The two sessions are subagents of one idle root, so neither runs a chat
 //! memory of its own.
 
+use eukhe_types::platform::transport::StdStream;
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -228,8 +228,8 @@ fn spawn_supervisor(socket: &Path, agent_dir: &Path) -> Daemon {
 
 /// One supervisor client connection.
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

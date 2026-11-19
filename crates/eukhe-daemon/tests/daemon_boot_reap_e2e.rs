@@ -15,8 +15,8 @@
 //! like the other eukhe-daemon e2e verifiers.
 #![cfg(target_os = "linux")]
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -83,8 +83,8 @@ fn child_pids_of(ppid: u32) -> Vec<u32> {
 }
 
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

@@ -4,8 +4,8 @@
 //! opened with, while the server's `echo` tool, never in the roster, is
 //! listed and called through `dyn`, and `report_issue` stores a row.
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
@@ -20,8 +20,8 @@ use process::Daemon;
 
 /// JSONL supervisor client (command envelopes, id-matched responses).
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {

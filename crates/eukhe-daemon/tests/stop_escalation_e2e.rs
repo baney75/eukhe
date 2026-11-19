@@ -36,8 +36,8 @@
 )]
 #![cfg(target_os = "linux")]
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -75,8 +75,8 @@ fn process_alive(pid: u32) -> bool {
 
 /// One client connection over the supervisor socket.
 struct Client {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Client {
