@@ -94,15 +94,15 @@ pub(super) struct SessionInfoGeneration {
 
 impl SessionInfoGeneration {
     pub(super) fn from_metadata(meta: &fs::Metadata) -> Self {
-        use std::os::unix::fs::MetadataExt;
+        let stat = eukhe_core::platform::stat::stat_fields(meta);
         Self {
             len: meta.len(),
-            dev: meta.dev(),
-            ino: meta.ino(),
-            mtime: meta.mtime(),
-            mtime_ns: meta.mtime_nsec(),
-            ctime: meta.ctime(),
-            ctime_ns: meta.ctime_nsec(),
+            dev: stat.dev,
+            ino: stat.ino,
+            mtime: stat.modified.0,
+            mtime_ns: stat.modified.1,
+            ctime: stat.changed.0,
+            ctime_ns: stat.changed.1,
         }
     }
 }
