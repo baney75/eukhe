@@ -20,6 +20,7 @@ use eukhe_types::daemon::{
     DaemonCommand, DaemonReplayStatus, DaemonResumeCursor, PromptInput, SessionEvent,
     StreamingBehavior,
 };
+use eukhe_types::platform::mode::CreationMode as _;
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -532,7 +533,7 @@ impl Tab {
                 let folder = std::env::temp_dir()
                     .join(format!("eukhe-dashboard-export-{}", uuid::Uuid::new_v4()));
                 tokio::fs::DirBuilder::new()
-                    .mode(0o700)
+                    .creation_mode(0o700)
                     .create(&folder)
                     .await
                     .with_context(|| format!("create {}", folder.display()))?;
