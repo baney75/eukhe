@@ -1,3 +1,5 @@
+// The terminal checks drive a Unix pty and termios: Unix only.
+#![cfg(unix)]
 // Harness fns are linear scripts; pid and length narrowing sits at OS
 // boundaries where the values are bounded.
 #![allow(

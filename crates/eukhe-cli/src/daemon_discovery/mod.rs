@@ -138,7 +138,7 @@ pub(crate) const NEVER_TOUCH_SOCKET_DIRS: &[&str] = &[
 ];
 
 /// The account's own default socket dir (`<passwd home>/.eukhe/run`).
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn account_run_dir() -> Option<PathBuf> {
     let user = nix::unistd::User::from_uid(nix::unistd::Uid::current()).ok()??;
     Some(
@@ -146,6 +146,18 @@ fn account_run_dir() -> Option<PathBuf> {
             .join(eukhe_types::platform::dirs::AGENT_DIR_NAME)
             .join(eukhe_types::platform::dirs::RUN_DIR_NAME),
     )
+}
+
+/// True when `path` sits inside the account's own default socket dir.
+#[cfg(all(test, unix))]
+fn account_run_dir_holds(path: &Path) -> bool {
+    account_run_dir().is_some_and(|dir| path.starts_with(dir))
+}
+
+/// No passwd home on Windows: the never-touch list alone guards tests.
+#[cfg(all(test, windows))]
+fn account_run_dir_holds(_path: &Path) -> bool {
+    false
 }
 
 /// True when `path` is or sits inside a never-touch directory (unit-test
@@ -156,7 +168,7 @@ pub(crate) fn is_never_touch(path: &Path) -> bool {
         NEVER_TOUCH_SOCKET_DIRS
             .iter()
             .any(|dir| path.starts_with(Path::new(dir)))
-            || account_run_dir().is_some_and(|dir| path.starts_with(dir))
+            || account_run_dir_holds(path)
     }
     #[cfg(not(test))]
     {
@@ -690,6 +702,7 @@ mod tests {
         dir.join("legacy-sockets")
     }
 
+    #[cfg(unix)]
     /// Accept-and-drop listener on `path`: a probe finds it reachable
     /// without the hello wait (so it reads stale), and its socket file is a
     /// live listener for the whole test.
@@ -815,6 +828,7 @@ mod tests {
         assert!(!probe.reachable);
     }
 
+    #[cfg(unix)]
     #[test]
     fn discovery_reports_orphan_files_inside_the_given_root_only() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -834,6 +848,7 @@ mod tests {
         assert!(!infos[0].is_default);
     }
 
+    #[cfg(unix)]
     /// The default scope finds this release's endpoint in the socket dir
     /// (on Linux an abstract socket: no file) and an earlier release's
     /// daemon still listening on a socket file in the legacy dir.
@@ -903,7 +918,7 @@ mod tests {
             [
                 DiscoveryScope::Default {
                     socket_dir: eukhe_types::platform::daemon_socket::socket_dir(),
-                    legacy_socket_dir: eukhe_types::platform::daemon_socket::legacy_socket_dir(),
+                    legacy_socket_dir: legacy_socket_dir(),
                 },
                 DiscoveryScope::Socket,
                 DiscoveryScope::AgentDir,
@@ -912,6 +927,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     /// The regression: an invocation scoped to its own socket or agent dir
     /// also swept the per-user default socket dir, so an isolated
     /// `shutdown --force` stopped the user's default daemon. Live
@@ -958,6 +974,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     /// The regression: a daemon started on `EUKHE_DAEMON_SOCKET` (or
     /// `--daemon-socket`) outside the socket dir and the agent dir was out
     /// of the invocation's root, so `shutdown --force` reported "No

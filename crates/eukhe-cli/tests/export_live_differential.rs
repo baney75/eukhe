@@ -30,8 +30,8 @@
 //! the tool renderer; the Rust worker's `ExportCommands`). The TS daemon
 //! is ground truth; the test skips when the TS binary is not installed.
 
+use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -139,8 +139,8 @@ fn spawn_supervisor(binary: &Path, dir: &Path) -> Supervisor {
 /// The daemon wire client: one line in, one matching response line out
 /// (events skip past until the response with our id arrives).
 struct Wire {
-    reader: BufReader<UnixStream>,
-    writer: UnixStream,
+    reader: BufReader<StdStream>,
+    writer: StdStream,
 }
 
 impl Wire {

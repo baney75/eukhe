@@ -213,7 +213,11 @@ fn writable(dir: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{classify, launcher_script, InstallKind, Installer, Places};
+    #[cfg(unix)]
+    use super::launcher_script;
+    #[cfg(unix)]
+    use super::Installer;
+    use super::{classify, InstallKind, Places};
     use std::path::{Path, PathBuf};
 
     fn places(launcher_dirs: Vec<PathBuf>) -> Places {
@@ -225,6 +229,7 @@ mod tests {
 
     /// An installer layout in `dir`: `root/eukhe-0.10.69/eukhe` and the
     /// launcher `bin/eukhe`.
+    #[cfg(unix)]
     fn installer_layout(dir: &Path) -> (PathBuf, PathBuf) {
         let root = dir.join("root");
         let payload = root.join("eukhe-0.10.69");
@@ -274,6 +279,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn an_installer_payload_with_its_launcher_is_an_installer_install() {
         let dir = tempfile::tempdir().unwrap();
@@ -293,6 +299,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_payload_without_a_launcher_that_execs_it_is_unknown() {
         let dir = tempfile::tempdir().unwrap();
@@ -305,6 +312,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_read_only_root_is_refused() {
         use std::os::unix::fs::PermissionsExt;

@@ -1,3 +1,5 @@
+// eukhe update installs through the shell launcher, which Windows has none of: Unix only.
+#![cfg(unix)]
 // Harness fns are linear scripts.
 #![allow(clippy::too_many_lines)]
 

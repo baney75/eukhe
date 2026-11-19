@@ -471,6 +471,7 @@ fn fork_startup_selection_expands_a_tilde_selector() {
     assert!(storage_contains(&fork, "tilde question"));
 }
 
+#[cfg(unix)]
 #[test]
 fn fork_startup_selection_rejects_a_fifo_source_without_hanging() {
     // A FIFO with no writer blocks a read forever; the launch must error

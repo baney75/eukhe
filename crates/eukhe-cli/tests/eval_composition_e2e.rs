@@ -64,7 +64,9 @@ fn run(home: &Path, args: &[&str], script: &Value) -> (String, String, i32) {
     )
 }
 
+#[cfg(unix)]
 fn make_executable(path: &Path) {
+    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = std::fs::metadata(path).unwrap().permissions();
     permissions.set_mode(0o755);
@@ -74,6 +76,7 @@ fn make_executable(path: &Path) {
 /// The fixture verifier: passes once the run has made at least one more
 /// attempt after the first failing check (the counter file records
 /// consults). Hermetic: only the fixture directory is touched.
+#[cfg(unix)]
 fn pass_on_second_consult_verifier(home: &Path) -> PathBuf {
     let script = home.join("verify.sh");
     let counter = home.join("verify-count").display().to_string();
@@ -98,6 +101,7 @@ fn pass_on_second_consult_verifier(home: &Path) -> PathBuf {
 
 /// The fixture verifier that never passes: a task the scripted model cannot
 /// complete.
+#[cfg(unix)]
 fn always_failing_verifier(home: &Path) -> PathBuf {
     let script = home.join("verify-fail.sh");
     std::fs::write(
@@ -184,6 +188,7 @@ fn without_assistant_messages(value: &Value) -> Value {
 /// TS shape: no run boundary between continuation turns), the second
 /// consult passes, and the run stops without a row (the TS shape, probed
 /// against the binary: the stop surfaces through the exit contract only).
+#[cfg(unix)]
 #[test]
 fn verifier_gate_pass_stops_the_run_with_structured_events_in_run() {
     let home = isolated_home();
@@ -332,6 +337,7 @@ fn verifier_gate_pass_stops_the_run_with_structured_events_in_run() {
 /// A verifier that never passes exhausts its retry window: the process exits
 /// one, the TS print-mode stderr line names the attempt and exit code, and
 /// the stop writes no row (the exit contract carries it).
+#[cfg(unix)]
 #[test]
 fn verifier_gate_failure_exhausts_retries_and_exits_one() {
     let home = isolated_home();
@@ -387,6 +393,7 @@ fn verifier_gate_failure_exhausts_retries_and_exits_one() {
 
 /// Text mode prints the final answer on a passing verifier run, and stays
 /// quiet about the autonomous machinery (the stop writes nothing).
+#[cfg(unix)]
 #[test]
 fn text_mode_verifier_pass_prints_the_final_answer() {
     let home = isolated_home();

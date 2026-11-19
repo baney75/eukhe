@@ -11,6 +11,8 @@
 //!
 //! The test has its own binary: it sets the process environment that
 //! the in-process TUI reads.
+// The daemon binds in a 0700 directory made with Unix permission bits.
+#![cfg(unix)]
 // The test is one linear script (the fn-length gate is style, not
 // correctness), and its async test future is stack-resident by shape.
 #![allow(clippy::large_futures, clippy::too_many_lines)]
