@@ -17,6 +17,17 @@ use eukhe_types::model_roles::ModelRole;
 const USER_SETTINGS: &str = include_str!("../../tests/fixtures/user_home/settings.json");
 const USER_CONFIG: &str = include_str!("../../tests/fixtures/user_home/config.cfg");
 
+/// The user's settings fixture. Its trusted project is a Unix absolute
+/// path, which Windows rightly reports as relative; there it is rooted
+/// at a drive.
+fn user_settings() -> String {
+    if cfg!(windows) {
+        USER_SETTINGS.replace("\"/home/user/project\"", "\"C:/home/user/project\"")
+    } else {
+        USER_SETTINGS.to_owned()
+    }
+}
+
 /// A home with the user's `~/.eukhe` files and a project directory.
 struct Home {
     _dir: tempfile::TempDir,
@@ -31,7 +42,7 @@ impl Home {
         let agent = home.join(".eukhe");
         std::fs::create_dir_all(&agent).unwrap();
         std::fs::create_dir_all(home.join("work")).unwrap();
-        std::fs::write(agent.join("settings.json"), USER_SETTINGS).unwrap();
+        std::fs::write(agent.join("settings.json"), user_settings()).unwrap();
         std::fs::write(agent.join("config.cfg"), USER_CONFIG).unwrap();
         Self {
             _dir: dir,
@@ -84,7 +95,7 @@ fn a_thinking_level_set_in_the_ui_reads_back() {
              set gateway.signal.model local/qwen3.8-27b\n\
              set modelRoles.all anthropic/claude-fable-5\n"
                 .to_owned(),
-            USER_SETTINGS.to_owned(),
+            user_settings(),
         )
     );
 }
@@ -176,7 +187,7 @@ fn model_all_runs_every_llm_role_on_the_model() {
         source,
         selector: selector.map(str::to_owned),
     };
-    let mut expected_settings: serde_json::Value = serde_json::from_str(USER_SETTINGS).unwrap();
+    let mut expected_settings: serde_json::Value = serde_json::from_str(&user_settings()).unwrap();
     expected_settings["memory"]
         .as_object_mut()
         .unwrap()
