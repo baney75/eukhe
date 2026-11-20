@@ -540,14 +540,47 @@ pub async fn listener_pid(path: &Path, _rules: PeerRules) -> std::io::Result<Opt
 pub struct BlockingPipe {
     /// Declared before the runtime: it drops first, while its runtime runs.
     client: Arc<NamedPipeClient>,
-    runtime: Arc<tokio::runtime::Runtime>,
+    runtime: Arc<PipeRuntime>,
     read_timeout: Arc<Mutex<Option<Duration>>>,
 }
 
-/// The refusal of a blocking pipe call made on a tokio runtime's thread,
-/// where it cannot wait.
-fn on_runtime_thread() -> std::io::Error {
-    std::io::Error::other("a blocking pipe stream cannot wait on a tokio runtime's thread")
+/// The runtime a blocking pipe waits on. Dropped on a tokio runtime's
+/// thread, where a runtime cannot block to shut down, it shuts down in
+/// the background.
+#[derive(Debug)]
+struct PipeRuntime(Option<tokio::runtime::Runtime>);
+
+impl PipeRuntime {
+    fn get(&self) -> &tokio::runtime::Runtime {
+        self.0
+            .as_ref()
+            .expect("a pipe runtime lives until its drop")
+    }
+}
+
+impl Drop for PipeRuntime {
+    fn drop(&mut self) {
+        if let Some(runtime) = self.0.take() {
+            if tokio::runtime::Handle::try_current().is_ok() {
+                runtime.shutdown_background();
+            }
+        }
+    }
+}
+
+/// Run `work`, which blocks, on this thread; on a tokio runtime's thread,
+/// where a runtime cannot be blocked on, on a scoped thread of its own.
+/// Either way the caller's thread waits, as a Unix socket's would.
+fn off_runtime<T: Send>(work: impl FnOnce() -> T + Send) -> T {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return work();
+    }
+    std::thread::scope(|scope| {
+        scope
+            .spawn(work)
+            .join()
+            .unwrap_or_else(|panic| std::panic::resume_unwind(panic))
+    })
 }
 
 impl BlockingPipe {
@@ -582,14 +615,12 @@ impl BlockingPipe {
     }
 
     /// Run `io` on the stream's runtime until it completes.
-    fn drive<T>(
+    fn drive<T: Send>(
         &self,
-        io: impl std::future::Future<Output = std::io::Result<T>>,
+        io: impl std::future::Future<Output = std::io::Result<T>> + Send,
     ) -> std::io::Result<T> {
-        if tokio::runtime::Handle::try_current().is_ok() {
-            return Err(on_runtime_thread());
-        }
-        self.runtime.block_on(io)
+        let runtime = self.runtime.get();
+        off_runtime(|| runtime.block_on(io))
     }
 }
 
@@ -655,13 +686,13 @@ pub type StdStream = BlockingPipe;
 
 /// Connect to the endpoint at `path`, blocking until connected. The
 /// endpoint file and the pipe's DACL take the place of `rules` (module
-/// doc). Off any tokio runtime's thread: the stream waits on a runtime of
-/// its own.
+/// doc). The stream waits on a runtime of its own, and blocks its caller
+/// on a tokio runtime's thread too, as a Unix socket does.
 ///
 /// # Errors
 ///
-/// Nothing listens at `path`, the open fails, the stream's runtime cannot
-/// start, or the caller runs on a tokio runtime's thread.
+/// Nothing listens at `path`, the open fails, or the stream's runtime
+/// cannot start.
 pub fn connect_blocking(
     path: &Path,
     _rules: PeerRules,
@@ -670,17 +701,20 @@ pub fn connect_blocking(
 }
 
 /// Connect to the endpoint at `path`, blocking until connected, with no
-/// rule (as on Unix): the pipe's DACL decides who serves it. Off any tokio
-/// runtime's thread: the stream waits on a runtime of its own.
+/// rule (as on Unix): the pipe's DACL decides who serves it. The stream
+/// waits on a runtime of its own, and blocks its caller on a tokio
+/// runtime's thread too, as a Unix socket does.
 ///
 /// # Errors
 ///
-/// Nothing listens at `path`, the open fails, the stream's runtime cannot
-/// start, or the caller runs on a tokio runtime's thread.
+/// Nothing listens at `path`, the open fails, or the stream's runtime
+/// cannot start.
 pub fn connect_std(path: &Path) -> std::io::Result<StdStream> {
-    if tokio::runtime::Handle::try_current().is_ok() {
-        return Err(on_runtime_thread());
-    }
+    off_runtime(|| open_std(path))
+}
+
+/// [`connect_std`] off any tokio runtime's thread.
+fn open_std(path: &Path) -> std::io::Result<StdStream> {
     let name = read_pipe_name(path)?;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
@@ -704,7 +738,7 @@ pub fn connect_std(path: &Path) -> std::io::Result<StdStream> {
     };
     Ok(BlockingPipe {
         client: Arc::new(client),
-        runtime: Arc::new(runtime),
+        runtime: Arc::new(PipeRuntime(Some(runtime))),
         read_timeout: Arc::new(Mutex::new(None)),
     })
 }
@@ -973,5 +1007,29 @@ mod tests {
         );
         drop((client, writer));
         runtime.block_on(echo).expect("echo task");
+    }
+
+    /// A blocking client made, used and dropped on a tokio runtime's
+    /// thread blocks that thread as a Unix socket would, and the server
+    /// task on another worker answers it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_blocking_client_works_on_a_runtime_thread() {
+        use std::io::{Read, Write};
+        let dir = tempfile::TempDir::new().expect("temp dir");
+        let socket = dir.path().join("daemon.sock");
+        let listener = bind_tokio(&socket).expect("bind");
+        let echo = tokio::spawn(async move {
+            let mut server = listener.accept().await.expect("accept");
+            let mut buf = [0u8; 4];
+            server.read_exact(&mut buf).await.expect("read");
+            server.write_all(&buf).await.expect("echo");
+        });
+        let mut client = connect_std(&socket).expect("connect");
+        client.write_all(b"ping").expect("write");
+        let mut buf = [0u8; 4];
+        client.read_exact(&mut buf).expect("read");
+        assert_eq!(&buf, b"ping");
+        drop(client);
+        echo.await.expect("echo task");
     }
 }
