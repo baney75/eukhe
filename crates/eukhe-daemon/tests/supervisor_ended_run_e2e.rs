@@ -7,7 +7,9 @@
 //! is answered.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::Command;
+#[cfg(unix)]
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -58,6 +60,7 @@ fn wait_until(what: &str, mut done: impl FnMut() -> bool) {
     }
 }
 
+#[cfg(unix)]
 fn signal(pid: u64, name: &str) {
     let _ = Command::new("kill")
         .args([&format!("-{name}"), &pid.to_string()])
@@ -65,12 +68,30 @@ fn signal(pid: u64, name: &str) {
         .status();
 }
 
+#[cfg(unix)]
 fn process_alive(pid: u64) -> bool {
     Command::new("kill")
         .args(["-0", &pid.to_string()])
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// No `kill` reaches a native Windows process; ask the platform.
+#[cfg(windows)]
+fn process_alive(pid: u64) -> bool {
+    u32::try_from(pid)
+        .is_ok_and(|pid| eukhe_types::platform::process::is_process_alive(pid).unwrap_or(false))
+}
+
+/// A hard kill of a worker, which may already be gone.
+fn kill_worker(pid: u64) {
+    #[cfg(unix)]
+    signal(pid, "KILL");
+    #[cfg(windows)]
+    if let Ok(pid) = u32::try_from(pid) {
+        let _ = eukhe_types::platform::process::kill_process(pid);
+    }
 }
 
 /// The text of a wire message (string content or text parts).
@@ -259,6 +280,7 @@ impl Session {
     }
 }
 
+#[cfg(unix)] // SIGSTOP freezes the worker; Windows has no stop signal.
 #[test]
 fn a_worker_that_stops_answering_is_restarted_and_its_turn_ends() {
     let mut session = Session::open("hung-worker");
@@ -280,6 +302,7 @@ fn a_worker_that_stops_answering_is_restarted_and_its_turn_ends() {
     );
 }
 
+#[cfg(unix)] // SIGSTOP freezes the worker; Windows has no stop signal.
 #[test]
 fn a_worker_paused_inside_the_window_keeps_its_run() {
     let mut session = Session::open("paused-worker");
@@ -311,7 +334,7 @@ fn a_crash_loop_past_the_restart_budget_ends_the_turn() {
     // worker the supervisor brings up until it gives the session up.
     for _ in 0..6 {
         let pid = session.worker_pid();
-        signal(pid, "KILL");
+        kill_worker(pid);
         wait_until("the killed worker's exit", || !process_alive(pid));
     }
     wait_until("the give-up", || {
