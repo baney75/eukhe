@@ -461,7 +461,8 @@ pub async fn run_gate_command(
     timeout_ms: u64,
 ) -> anyhow::Result<ChildProcessResult> {
     let args = ["-c".to_string(), command.to_string()];
-    run_child_process("bash", &args, cwd, timeout_ms).await
+    let bash = crate::platform::shell::posix_shell_program("bash")?;
+    run_child_process(&bash, &args, cwd, timeout_ms).await
 }
 
 /// Read one output pipe to EOF, keeping at most `cap` characters; the

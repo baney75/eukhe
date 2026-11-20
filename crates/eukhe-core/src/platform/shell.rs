@@ -117,6 +117,32 @@ fn find_bash_on_path() -> Option<String> {
     (!first.is_empty()).then(|| first.to_string())
 }
 
+/// The program for a call site that runs a command string with `unix -c`
+/// (`bash` or `sh`): that name itself on Unix, found on `PATH` as
+/// before; on Windows the bash [`get_shell_config`] picks, since Windows
+/// has no `sh` and its `bash` on `PATH` launches WSL.
+///
+/// # Errors
+///
+/// On Windows, `NotFound` when no bash is installed.
+// Never an error on Unix; the Result carries the Windows lookup.
+#[cfg_attr(unix, allow(clippy::unnecessary_wraps))]
+pub fn posix_shell_program(unix: &'static str) -> std::io::Result<String> {
+    #[cfg(unix)]
+    {
+        Ok(unix.to_owned())
+    }
+    #[cfg(windows)]
+    {
+        find_windows_bash().ok_or_else(|| {
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("no bash found to stand in for {unix}: install Git for Windows"),
+            )
+        })
+    }
+}
+
 /// Absolute default shell for the kernel's `bash()`: explicit path wins,
 /// else `/bin/bash`, else `/bin/sh`.
 pub fn resolve_kernel_bash_shell(custom_shell_path: Option<&str>) -> String {
