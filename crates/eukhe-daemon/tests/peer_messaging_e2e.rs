@@ -24,6 +24,9 @@
 //! exercised for real.
 //!
 //! Exercises `AF_UNIX` sockets and process-group kills.
+// Unix only: every case sends through the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
+
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
