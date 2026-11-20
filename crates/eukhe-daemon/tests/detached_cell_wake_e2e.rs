@@ -4,7 +4,8 @@
 //! budget. The cell must not hold the turn: its call settles `detached`,
 //! the turn ends while the cell still runs, and the cell's end wakes the
 //! idle session with the `[job-settled ...]` report carrying its output.
-
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 // Stack-resident futures by design; see readoption_wake_e2e.rs.
 #![allow(clippy::large_futures)]
 use eukhe_types::platform::transport::StdStream;

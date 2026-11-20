@@ -14,6 +14,8 @@
 //!
 //! The kernel Python is this checkout's runtime
 //! (`eukhe-core/tests/support/kernel_runtime.rs`).
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};

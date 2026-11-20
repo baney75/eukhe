@@ -19,7 +19,8 @@
 //!
 //! The kernel Python is this checkout's runtime
 //! (`eukhe-core/tests/support/kernel_runtime.rs`).
-
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 // The fn-length threshold is a style gate; each verifier reads as one
 // scenario top to bottom.
 #![allow(clippy::too_many_lines)]

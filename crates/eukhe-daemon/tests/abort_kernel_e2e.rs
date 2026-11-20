@@ -5,6 +5,8 @@
 //! session returns to ready - instead of running the cell out or wedging
 //! with the loader spinning. Drives the exact worker stack (real kernel,
 //! real turn runner) over the daemon wire.
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};

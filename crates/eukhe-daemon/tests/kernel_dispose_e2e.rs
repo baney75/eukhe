@@ -22,6 +22,8 @@
 //! its own supervisor's workers started (found while the supervisor
 //! lives, so a kernel orphaned by the leak stays followed), so the kernels
 //! of other runs on the same box never interfere.
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};

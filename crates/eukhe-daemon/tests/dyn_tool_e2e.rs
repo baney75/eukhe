@@ -3,6 +3,8 @@
 //! MCP server. Over two turns the session's requests all carry the roster it
 //! opened with, while the server's `echo` tool, never in the roster, is
 //! listed and called through `dyn`, and `report_issue` stores a row.
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};

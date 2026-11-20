@@ -417,6 +417,7 @@ fn setup_messaging() -> Messaging {
 
 /// Verifier 1: a kernel send in child A to its parent delivers straight
 /// through the peer transport into worker B, with the TS sender identity.
+#[cfg(unix)]
 #[test]
 fn worker_to_worker_kernel_send_delivers_over_the_peer_transport() {
     let messaging = setup_messaging();

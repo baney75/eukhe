@@ -11,6 +11,9 @@
 //!
 //! The kernel Python is this checkout's runtime
 //! (`eukhe-core/tests/support/kernel_runtime.rs`).
+// The kernel tests are Unix-only (the RLM kernel runtime is POSIX-only);
+// on Windows the helpers only they use go unused.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
@@ -311,6 +314,7 @@ fn spawn_cell() -> &'static str {
 /// A child that reported to its parent (an agent message) exits passively:
 /// the parent answers the report once and never runs the no-reply notice
 /// turn its settle would otherwise queue.
+#[cfg(unix)]
 #[test]
 fn a_child_that_reported_exits_without_waking_its_parent() {
     let dir = tempfile::TempDir::new().expect("temp dir");
