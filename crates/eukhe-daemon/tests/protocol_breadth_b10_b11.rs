@@ -30,7 +30,9 @@
 )]
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
+#[cfg(unix)]
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -750,6 +752,7 @@ fn wave_b11_saved_sessions_wire_shapes() {
     );
 }
 
+#[cfg(unix)] // Freezes workers with SIGSTOP, which Windows lacks.
 /// The heartbeat-catalog snapshot fallback (TS `worker.heartbeatSnapshot`):
 /// a worker too busy to answer a fresh `heartbeats_list` serves its
 /// last-good rows, so a slow turn cannot empty the merged catalog while its
@@ -811,6 +814,7 @@ fn wave_b10_heartbeat_snapshot_fallback() {
     cont(pid);
 }
 
+#[cfg(unix)] // Freezes workers with SIGSTOP, which Windows lacks.
 /// TS #2487, the single-worker catalog: the served slice is the worker's
 /// own answer, so the merged `heartbeats_list`/`cron_list` responses are
 /// byte-identical to the fresh-forward catalog while a re-consult is
@@ -873,6 +877,7 @@ fn wave_b10_single_worker_slice_is_byte_identical() {
     cont(pid);
 }
 
+#[cfg(unix)] // Freezes workers with SIGSTOP, which Windows lacks.
 /// TS #2487: the supervisor serves each worker's own catalog slice from its
 /// snapshot instead of forwarding every request to every worker — a
 /// `heartbeats_list` consults a worker at most once per generation. Two
@@ -969,6 +974,7 @@ fn wave_b10_catalog_slices_served_without_reforwarding() {
     cont(pid_b);
 }
 
+#[cfg(unix)] // Only the SIGSTOP tests use it.
 /// The paused/active prompts in a merged `heartbeats_list` response.
 fn heartbeat_prompts(response: &Value) -> Vec<String> {
     response["data"]["heartbeats"]
@@ -979,6 +985,7 @@ fn heartbeat_prompts(response: &Value) -> Vec<String> {
         .collect()
 }
 
+#[cfg(unix)] // Only the SIGSTOP tests use it.
 /// A second resident worker's pid (distinct from `first`).
 fn second_worker_pid(agent_dir: &std::path::Path, first: u32) -> u32 {
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -1014,6 +1021,7 @@ fn second_worker_pid(agent_dir: &std::path::Path, first: u32) -> u32 {
     }
 }
 
+#[cfg(unix)] // Only the SIGSTOP tests use it.
 /// Create one scripted live session on `client` (the `scripted_session`
 /// helper's shape, for a second session on a shared daemon).
 fn create_scripted_session(
@@ -1048,6 +1056,7 @@ fn create_scripted_session(
         .to_string()
 }
 
+#[cfg(unix)] // Only the SIGSTOP tests use it.
 /// The resident worker's pid from its persisted descriptor.
 fn worker_pid(agent_dir: &std::path::Path) -> u32 {
     let deadline = Instant::now() + Duration::from_secs(10);
@@ -1078,6 +1087,7 @@ fn worker_pid(agent_dir: &std::path::Path) -> u32 {
     }
 }
 
+#[cfg(unix)] // Process stop signals, which Windows lacks.
 /// SIGSTOP `pid` and wait until the stop took hold. `kill` returns once
 /// the signal is queued: the kernel stops a multi-threaded process when
 /// the thread it picked for the signal next runs, and until then the
@@ -1111,6 +1121,7 @@ fn stop(pid: u32) {
     }
 }
 
+#[cfg(unix)] // Process stop signals, which Windows lacks.
 fn cont(pid: u32) {
     assert!(
         Command::new("kill")
