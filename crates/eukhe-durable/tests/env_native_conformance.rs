@@ -44,6 +44,14 @@ fn provider(watch: NativeWatchOptions) -> EnvConformanceProvider {
     })
 }
 
+/// The symlink cases make their links with the suite shell's `ln -s`,
+/// which on Windows (an MSYS shell) writes a copy, not a link; they run
+/// where the shell makes real links.
+#[cfg(unix)]
+const SYMLINKS: Option<bool> = None;
+#[cfg(windows)]
+const SYMLINKS: Option<bool> = Some(false);
+
 #[tokio::test(flavor = "multi_thread")]
 async fn native_execution_env_conformance() {
     run_env_conformance(
@@ -51,7 +59,7 @@ async fn native_execution_env_conformance() {
         EnvConformanceOptions {
             with_env: provider(NativeWatchOptions::default()),
             shell: None,
-            symlinks: None,
+            symlinks: SYMLINKS,
         },
     )
     .await;
@@ -68,7 +76,7 @@ async fn native_execution_env_conformance_with_polling_watches() {
                 max_directories: None,
             }),
             shell: None,
-            symlinks: None,
+            symlinks: SYMLINKS,
         },
     )
     .await;
