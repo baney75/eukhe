@@ -318,9 +318,7 @@ impl Locked {
         // The file's first record: its directory entry is made durable
         // too, or a crash could lose the file with what it acknowledged.
         if let (0, Some(dir)) = (self.end, self.path.parent()) {
-            File::open(dir)
-                .and_then(|dir| dir.sync_all())
-                .map_err(|e| self.io(e))?;
+            eukhe_types::platform::sync_directory(dir).map_err(|e| self.io(e))?;
         }
         Ok((
             Locked {
