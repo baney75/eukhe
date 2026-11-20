@@ -1,6 +1,8 @@
 //! Shell selection for the bash tool and the kernel's `bash()`.
 //!
-//! Explicit path, `/bin/bash`, `which bash`, `sh`.
+//! Explicit path, then on Unix `/bin/bash`, `which bash`, `sh`; on
+//! Windows Git Bash under Program Files, then `bash.exe` on `PATH`
+//! (not the System32 WSL launcher), else an error.
 
 use std::path::Path;
 
@@ -17,8 +19,9 @@ pub struct ShellConfig {
 ///
 /// Returns an error when the explicit custom shell path is not absolute (a
 /// relative path would resolve against whatever directory the command
-/// runs in) or does not exist; built-in resolution never fails (a missing
-/// bash falls back to `sh`).
+/// runs in) or does not exist. Built-in resolution never fails on Unix (a
+/// missing bash falls back to `sh`); on Windows it fails when no bash is
+/// installed, since Windows has no `sh` to fall back to.
 pub fn get_shell_config(custom_shell_path: Option<&str>) -> anyhow::Result<ShellConfig> {
     if let Some(path) = custom_shell_path {
         if !Path::new(path).is_absolute() {
@@ -34,7 +37,52 @@ pub fn get_shell_config(custom_shell_path: Option<&str>) -> anyhow::Result<Shell
         }
         return Err(anyhow::anyhow!("Custom shell path not found: {path}"));
     }
+    default_shell_config()
+}
 
+#[cfg(windows)]
+fn default_shell_config() -> anyhow::Result<ShellConfig> {
+    let bash = find_windows_bash().ok_or_else(|| {
+        anyhow::anyhow!("no bash found: install Git for Windows or set shellPath to a bash.exe")
+    })?;
+    Ok(ShellConfig {
+        shell: bash,
+        args: vec!["-c".to_string()],
+    })
+}
+
+/// Git Bash under `%ProgramFiles%` or `%ProgramFiles(x86)%`, then the
+/// first `bash.exe` on `PATH` outside the Windows directory (whose
+/// `System32\bash.exe` launches WSL, not a Windows bash).
+#[cfg(windows)]
+fn find_windows_bash() -> Option<String> {
+    let installed = ["ProgramFiles", "ProgramFiles(x86)"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .map(|root| Path::new(&root).join("Git").join("bin").join("bash.exe"));
+    let windows_dir = std::env::var_os("SystemRoot").map(std::path::PathBuf::from);
+    let on_path = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|dir| {
+            windows_dir.as_ref().is_none_or(|windows| {
+                !dir.to_string_lossy()
+                    .to_lowercase()
+                    .starts_with(&windows.to_string_lossy().to_lowercase())
+            })
+        })
+        .map(|dir| dir.join("bash.exe"));
+    installed
+        .chain(on_path)
+        .find(|candidate| candidate.is_file())
+        .map(|bash| bash.to_string_lossy().into_owned())
+}
+
+// Never an error on Unix (sh is the last resort); the Result is for Windows.
+#[cfg(unix)]
+#[allow(clippy::unnecessary_wraps)]
+fn default_shell_config() -> anyhow::Result<ShellConfig> {
     if Path::new("/bin/bash").exists() {
         return Ok(ShellConfig {
             shell: "/bin/bash".to_string(),
@@ -55,6 +103,7 @@ pub fn get_shell_config(custom_shell_path: Option<&str>) -> anyhow::Result<Shell
     })
 }
 
+#[cfg(unix)]
 fn find_bash_on_path() -> Option<String> {
     let out = std::process::Command::new("which")
         .arg("bash")
