@@ -608,23 +608,9 @@ impl NativeExecutionEnv {
         let resolved = self.resolve(path);
         abort_result(cx, Some(&resolved))?;
         let target = resolved.clone();
-        let flushed = blocking(move || {
-            // POSIX opens a directory read-only; its fsync commits the entries.
-            let directory = std::fs::File::open(&target)
-                .map_err(|error| io::Error::new(error.kind(), SyscallError("open", error)))?;
-            let metadata = directory
-                .metadata()
-                .map_err(|error| io::Error::new(error.kind(), SyscallError("fstat", error)))?;
-            if !metadata.is_dir() {
-                return Ok(false);
-            }
-            directory
-                .sync_all()
-                .map_err(|error| io::Error::new(error.kind(), SyscallError("fsync", error)))?;
-            Ok(true)
-        })
-        .await
-        .map_err(|error| syscall_error(error, &resolved))?;
+        let flushed = blocking(move || flush_directory_at(&target))
+            .await
+            .map_err(|error| syscall_error(error, &resolved))?;
         if !flushed {
             return Err(FileError::new(
                 FileErrorCode::NotDirectory,
@@ -1061,4 +1047,33 @@ impl Shell for NativeExecutionEnv {
     fn cleanup<'a>(&'a self, _cx: &'a Context) -> BoxFuture<'a, ()> {
         Box::pin(async move { self.kill_active_children() })
     }
+}
+
+/// Flush a directory's entries: `Ok(false)` when `target` is no directory.
+/// POSIX opens a directory read-only; its fsync commits the entries.
+#[cfg(unix)]
+fn flush_directory_at(target: &str) -> io::Result<bool> {
+    let directory = std::fs::File::open(target)
+        .map_err(|error| io::Error::new(error.kind(), SyscallError("open", error)))?;
+    let metadata = directory
+        .metadata()
+        .map_err(|error| io::Error::new(error.kind(), SyscallError("fstat", error)))?;
+    if !metadata.is_dir() {
+        return Ok(false);
+    }
+    directory
+        .sync_all()
+        .map_err(|error| io::Error::new(error.kind(), SyscallError("fsync", error)))?;
+    Ok(true)
+}
+
+/// Flush a directory's entries: `Ok(false)` when `target` is no directory.
+/// Windows opens no directory as a file without backup semantics and
+/// journals entry changes itself (Node's `fsync` of a directory fails
+/// there), so a directory that exists is a documented no-op flush.
+#[cfg(windows)]
+fn flush_directory_at(target: &str) -> io::Result<bool> {
+    let metadata = std::fs::metadata(target)
+        .map_err(|error| io::Error::new(error.kind(), SyscallError("open", error)))?;
+    Ok(metadata.is_dir())
 }
