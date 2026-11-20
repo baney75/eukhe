@@ -185,7 +185,9 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
-        let error = open_leaf(&root, "secret", 1024, false).unwrap_err();
+        let Err(error) = open_leaf(&root, "secret", 1024, false) else {
+            panic!("a junction root must fail the capture");
+        };
         assert!(
             error.to_string().contains("is not a real directory"),
             "{error}"
