@@ -370,8 +370,10 @@ pub(crate) fn bind_dead_socket(path: &Path) -> socket2::Socket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use eukhe_types::platform::transport::bind_transport;
 
+    #[cfg(unix)] // Only the Unix socket file tests use it.
     /// The socket file outlives the fd with nobody listening - exactly a
     /// crashed worker's residue.
     fn bind_stale_socket(path: &Path) {
@@ -514,6 +516,7 @@ mod tests {
     /// Off Linux the refused probe is ambiguous (a saturated backlog
     /// also refuses), so the close cleanup preserves the dead still-ours
     /// file; the next bind's stale-socket prepare clears it instead.
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[cfg(not(target_os = "linux"))]
     #[tokio::test]
     async fn exit_cleanup_off_linux_preserves_the_dead_file_until_the_next_bind() {
@@ -642,6 +645,7 @@ mod tests {
         drop(listener);
     }
 
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[tokio::test]
     async fn stale_socket_file_is_removed_and_the_path_rebinds() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -668,6 +672,7 @@ mod tests {
         drop(listener);
     }
 
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[tokio::test]
     async fn unlink_refuses_a_replaced_file_with_a_new_identity() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -698,6 +703,7 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[tokio::test]
     async fn cleanup_waits_while_a_rival_startup_holds_the_lock() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -745,6 +751,7 @@ mod tests {
         drop(listener);
     }
 
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[tokio::test]
     async fn a_stale_cleanup_lock_of_a_crashed_holder_is_reclaimed() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -815,6 +822,7 @@ mod tests {
         assert_eq!(remaining, expected);
     }
 
+    #[cfg(unix)] // Only the Unix socket file tests use it.
     /// A dir past every endpoint name limit (108 bytes with a socket name),
     /// with the agent dir (whose run dir holds the short endpoints) a fresh
     /// short dir. Nextest runs each test in its own process.
@@ -831,6 +839,7 @@ mod tests {
     /// a live owner keeps it, and once the owner is gone the link goes (at
     /// the owner's exit cleanup on Linux, at the next prepare everywhere)
     /// and the path binds again.
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[tokio::test]
     async fn a_socket_past_the_name_limit_binds_through_a_link() {
         let (_root, agent, deep) = deep_dir();
@@ -874,6 +883,7 @@ mod tests {
 
     /// The start sweep reaps a dead worker's link (a worker socket past the
     /// name limit) and keeps a live one's.
+    #[cfg(unix)] // A Unix socket file's lifecycle; a Windows endpoint names a pipe.
     #[tokio::test]
     async fn the_start_sweep_reaps_a_dead_workers_link() {
         let (_root, _agent, deep) = deep_dir();
