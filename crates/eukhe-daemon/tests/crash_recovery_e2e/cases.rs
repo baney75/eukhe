@@ -455,16 +455,19 @@ fn daemon_and_worker_killed_mid_stream() {
     run_case(Phase::Stream, Target::Both);
 }
 
+#[cfg(unix)] // The slow tool is a python call on the RLM kernel, which is Unix-only.
 #[test]
 fn worker_killed_mid_tool_call() {
     run_case(Phase::Tool, Target::Worker);
 }
 
+#[cfg(unix)] // The slow tool is a python call on the RLM kernel, which is Unix-only.
 #[test]
 fn supervisor_killed_mid_tool_call() {
     run_case(Phase::Tool, Target::Supervisor);
 }
 
+#[cfg(unix)] // The slow tool is a python call on the RLM kernel, which is Unix-only.
 #[test]
 fn daemon_and_worker_killed_mid_tool_call() {
     run_case(Phase::Tool, Target::Both);
