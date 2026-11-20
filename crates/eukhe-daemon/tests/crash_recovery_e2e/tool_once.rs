@@ -53,7 +53,7 @@ pub(crate) fn reply(request: &Request, prompt: &str, release: &Path) -> Option<R
     }
     if request.prompt.contains(BASH_TAG) {
         let appends = release.with_file_name(APPENDS);
-        let script = format!("echo run >> {}", appends.display());
+        let script = format!("echo run >> {}", sh_path(&appends));
         return Some(Reply::tool_call(call, "bash", json!({ "script": script })));
     }
     None

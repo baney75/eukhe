@@ -693,3 +693,14 @@ fn requests(log: &[Logged], probe: impl Fn(&Logged) -> bool) -> Vec<&Logged> {
 fn served(log: &[Logged]) -> Vec<Served> {
     log.iter().map(|entry| entry.served).collect()
 }
+
+/// `path` as a bash word: Git Bash on Windows reads a backslash as an escape, so
+/// there the path takes `/`.
+fn sh_path(path: &Path) -> String {
+    let shown = path.display().to_string();
+    if cfg!(windows) {
+        shown.replace('\\', "/")
+    } else {
+        shown
+    }
+}
