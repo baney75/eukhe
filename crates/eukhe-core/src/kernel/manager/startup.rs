@@ -31,6 +31,9 @@ static NEXT_ORPHAN_JOURNAL: std::sync::atomic::AtomicU64 = std::sync::atomic::At
 /// What one start runs: the host interpreter it resolved (`None` for the
 /// session's own interpreter, which runs as it is), or the transport's
 /// wrapper.
+// One short-lived value per start; the size gap (wider on Windows) costs
+// nothing worth a box.
+#[allow(clippy::large_enum_variant)]
 enum Launch<'a> {
     Local(std::path::PathBuf, Option<crate::kernel::KernelPython>),
     Wrapped(&'a KernelWrapper),

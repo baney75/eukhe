@@ -5,6 +5,9 @@
 //! thinking, prompt, and chat-memory inputs. `EUKHE_FAUX_SCRIPT` (JSON
 //! text; verification harness only, never set by the product) swaps the
 //! model collection for the scripted faux provider.
+// A Windows PathBuf is wider (32 bytes, 24 on Unix), which pushes the
+// held-session error variant past the large-Err bound there only.
+#![cfg_attr(windows, allow(clippy::result_large_err))]
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

@@ -2,6 +2,9 @@
 //! `eukhe_core::durable::EukheSession`, the pi-durable print pattern:
 //! submit, wait for the submission, wait for the conversation to go idle),
 //! the RPC mode's session factory, and the ACP daemon create.
+// A Windows PathBuf is wider (32 bytes, 24 on Unix), which pushes the
+// held-session error variant past the large-Err bound there only.
+#![cfg_attr(windows, allow(clippy::result_large_err))]
 
 use std::future::Future;
 use std::path::PathBuf;
