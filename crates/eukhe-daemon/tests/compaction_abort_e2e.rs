@@ -33,7 +33,10 @@
 use std::fmt::Write as _;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
+#[cfg(unix)]
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -687,6 +690,7 @@ fn abort_compaction_mid_threshold_run_records_the_cancelled_outcome() {
     );
 }
 
+#[cfg(unix)] // Only the SIGSTOP test uses it.
 /// Find the resident worker's pid from the persisted descriptors (the
 /// supervisor's own durable state under `daemon-workers/<socket hash>/`).
 fn worker_pid(agent_dir: &Path) -> u32 {
@@ -728,6 +732,7 @@ fn worker_pid(agent_dir: &Path) -> u32 {
     );
 }
 
+#[cfg(unix)] // Only the SIGSTOP test uses it.
 /// The supervisor's terminal-compaction journal for this socket, if written.
 fn supervision_journal(agent_dir: &Path) -> Option<PathBuf> {
     let workers_dir = agent_dir.join("daemon-workers");
@@ -744,6 +749,7 @@ fn supervision_journal(agent_dir: &Path) -> Option<PathBuf> {
     None
 }
 
+#[cfg(unix)] // Only the SIGSTOP test sends signals.
 fn signal(pid: u32, signal: &str) {
     let status = Command::new("kill")
         .arg(signal)
@@ -761,6 +767,7 @@ fn signal(pid: u32, signal: &str) {
 /// terminal record lands in the supervisor's own journal — and the
 /// replacement worker's create replay discloses the cancelled outcome in
 /// the rebuilt durable transcript.
+#[cfg(unix)] // Wedges the worker with SIGSTOP, which Windows lacks.
 #[test]
 fn wedged_worker_abort_acks_immediately_and_declares_terminal() {
     let dir = tempfile::tempdir().expect("temp dir");

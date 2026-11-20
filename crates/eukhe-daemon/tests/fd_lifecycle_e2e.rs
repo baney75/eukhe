@@ -3,6 +3,8 @@
 //! the process's open fds per cycle so any monotonically growing fd class in
 //! the supervisor (worker transports, journals, logs, event channels) is
 //! caught as a regression.
+// Unix only: counts each process's open descriptors with lsof, which Windows lacks.
+#![cfg(unix)]
 // Pedantic-gate dispositions (fleet-uniform ruling; see this lane's PR for
 // the full rationale).
 // Stack-resident futures by design on the daemon's hot paths; boxing the
