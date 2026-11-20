@@ -238,7 +238,9 @@ pub(super) fn grep(args: &[String], cwd: &Path, io: &mut Io) -> Option<i32> {
     })
 }
 
-#[cfg(test)]
+// Unix only: the test compares with GNU grep, and a recursive listing on
+// Windows joins with `\` (std's path join, not a choice the shell made).
+#[cfg(all(test, unix))]
 mod tests {
     use super::super::{captured, Output};
 
