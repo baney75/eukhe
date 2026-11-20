@@ -6,6 +6,8 @@
 //! One real supervisor whose socket is the default `<agent dir>/run/
 //! daemon.sock`, a real parent worker whose faux model drives the kernel
 //! `rlm.*` surface, and real scripted child workers.
+// Unix only: the Unix socket path-length limit (Windows sets none) and the RLM kernel.
+#![cfg(unix)]
 
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
