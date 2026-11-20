@@ -742,13 +742,17 @@ impl Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use crate::kernel::manager::ReplKernelManager;
+    #[cfg(unix)]
     use crate::kernel::shared::KernelManagerOptions;
 
+    #[cfg(unix)]
     fn manager() -> ReplKernelManager {
         ReplKernelManager::new(KernelManagerOptions::default())
     }
 
+    #[cfg(unix)]
     fn temp_root(tag: &str) -> std::path::PathBuf {
         let dir =
             std::env::temp_dir().join(format!("pa-stderr-perms-{}-{tag}", std::process::id()));
@@ -847,6 +851,7 @@ mod tests {
         assert_eq!(env, HashMap::new());
     }
 
+    #[cfg(unix)] // Unix mode bits on the kernel log; the kernel is Unix-only.
     #[test]
     fn kernel_stderr_log_is_owner_only() {
         let root = temp_root("create");

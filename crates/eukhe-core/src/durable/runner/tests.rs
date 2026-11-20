@@ -1,6 +1,8 @@
 //! The runners of code: the registry a session installs against the
 //! compiled core's (`bend/runners.bend` `registry`, entry
 //! `bend/ffi_runners.bend`), and the `python` gate on a real kernel.
+// Helpers of the kernel tests, which are Unix-only (KernelUnsupportedPlatform on Windows).
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -208,6 +210,7 @@ async fn call(
 /// set. Now, with `read` only and no client, and with a client that
 /// denies, the cell does not run (its marker file stays absent) and the
 /// model reads why; with `exec` in the auto set it runs, unasked.
+#[cfg(unix)] // Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_cell_runs_only_within_the_auto_set_or_approved() {
     let _kernel = kernel_test_lock().await;

@@ -1652,6 +1652,7 @@ async fn the_read_tool_serves_internal_urls() {
 
 /// A raw JSON-RPC stdio MCP server with resources: a paginated listing, a
 /// text resource and a binary one.
+#[cfg(unix)]
 const RESOURCE_SERVER: &str = r#"import base64, json, sys
 while line := sys.stdin.readline():
     request = json.loads(line)
@@ -1680,6 +1681,7 @@ while line := sys.stdin.readline():
 /// session's kernel (where the MCP client runs): `mcp://<server>` lists
 /// them, `mcp://<server>/<uri>` reads one (a binary one as a note of its
 /// size and type); a server the session does not have is rejected.
+#[cfg(unix)] // Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
 #[tokio::test]
 async fn the_read_tool_reads_mcp_resources() {
     let fixture = fixture();

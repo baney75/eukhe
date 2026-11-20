@@ -561,6 +561,7 @@ mod tests {
     /// Eukhe fetches, and one `CPython` with a download (url and sha256)
     /// for every platform: macOS and Linux, both architectures, the same
     /// version.
+    #[cfg(unix)] // The kernel toolchain pins uv for Unix targets only; the kernel is Unix-only.
     #[test]
     fn the_pin_file_pins_every_platform_to_one_version() {
         let pin = pin();
@@ -625,6 +626,7 @@ mod tests {
 
     /// A uv archive unpacks to its `uv` file, executable; an archive
     /// without one is refused.
+    #[cfg(unix)] // The kernel toolchain pins uv for Unix targets only; the kernel is Unix-only.
     #[test]
     fn the_uv_archive_unpacks_to_an_executable() -> anyhow::Result<()> {
         let dir = tempfile::tempdir()?;
