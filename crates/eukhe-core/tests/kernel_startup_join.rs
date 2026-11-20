@@ -1,4 +1,6 @@
 //! TS provisioner parity: all first-touch callers join one in-flight boot.
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 
 use eukhe_core::kernel::cancellation::AbortSignal;
 use eukhe_core::kernel::provisioner::{IpythonKernelProvisioner, IpythonKernelProvisionerOptions};

@@ -13,7 +13,8 @@
 //! call"), with "one-at-a-time" still selectable through the same
 //! setting surface. The follow-up lane never merges into the batch: it
 //! drains behind it as its own turn.
-
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 // Pedantic-gate dispositions (fleet-uniform ruling; see this lane's PR for
 // the full rationale).
 // Stack-resident futures by design on the daemon's hot paths; boxing the

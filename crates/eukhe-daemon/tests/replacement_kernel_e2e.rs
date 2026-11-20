@@ -36,6 +36,8 @@
 //! only the kernels running under the test's own supervisor, so ambient
 //! kernels (other agent sessions and concurrent test runs on the same box)
 //! never interfere.
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};

@@ -8,7 +8,8 @@
 //! `rlm.mcp.call_tool`. The kernel must resolve `mcp.config` through the
 //! session's host handlers, spawn the fixture over stdio, list its `echo`
 //! tool, and call it with the echoed argument.
-
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 // Pedantic-gate dispositions (fleet-uniform ruling; see this lane's PR for
 // the full rationale).
 // Stack-resident futures by design on the daemon's hot paths; boxing the

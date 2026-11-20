@@ -23,6 +23,8 @@
 //! 3. No admission teardown of a healthy child: the replaced child is
 //!    relaunched with the same worker id, its session file is not archived,
 //!    and it settles with its answer.
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 // Pedantic-gate dispositions (fleet-uniform ruling; see this lane's PR for
 // the full rationale).
 // Stack-resident futures by design on the daemon's hot paths; boxing the

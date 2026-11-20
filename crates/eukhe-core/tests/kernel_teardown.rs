@@ -1,3 +1,5 @@
+// Unix only: the RLM kernel runtime is POSIX-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 // The Tier-C/D ruling (fleet-uniform, 2026-09-28) - this target's own
 // crate root: the same bounded-boundary disposition as src/lib.rs
 // (large_futures/too_many_lines/the cast family; details there).
