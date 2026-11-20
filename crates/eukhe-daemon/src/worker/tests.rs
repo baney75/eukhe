@@ -619,7 +619,6 @@ async fn a_crashed_run_resumes_on_the_next_create() {
 /// mirror (which never hears a run end). The worker retires with a typed
 /// failure in its journal, and a revived worker reopens the storage,
 /// resumes the run, and drains the steer queued before the failure.
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_failed_harness_retires_the_worker_and_the_revival_drains_the_steer() {
     let dir = tempfile::tempdir().expect("tempdir");

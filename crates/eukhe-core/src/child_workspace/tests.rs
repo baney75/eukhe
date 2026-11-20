@@ -1065,7 +1065,6 @@ fn with_host_trust(trusted: &Path) -> String {
 /// trust of what the parent trusts (only that: `sub/mise.toml`, untrusted
 /// in the parent, stays untrusted), its node check runs with it, and the
 /// hand-back ends it.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_childs_copy_keeps_the_mise_trust_its_parent_has() {
     let dir = tempfile::tempdir().unwrap();
@@ -1124,7 +1123,6 @@ async fn a_childs_copy_keeps_the_mise_trust_its_parent_has() {
 
 /// A parent that trusts nothing, or no mise to ask, gives the copy no
 /// trust.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_copy_of_an_untrusted_or_unasked_parent_trusts_nothing() {
     let dir = tempfile::tempdir().unwrap();

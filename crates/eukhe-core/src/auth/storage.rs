@@ -496,7 +496,6 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
     #[test]
     fn a_linked_auth_file_locks_the_real_file() {
         // TS proper-lockfile locks `realpath(auth.json).lock` (TS #11655):
@@ -527,7 +526,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn auth_files_linked_to_one_document_share_its_refresh_flights() {
         let Linked { _dirs, real, links } = linked_document();
@@ -543,7 +541,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn auth_files_linked_to_one_document_take_turns_in_one_process() {
         // One in-process lock per document: a writer through the second

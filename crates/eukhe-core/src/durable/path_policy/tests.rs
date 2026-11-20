@@ -17,8 +17,6 @@ use super::*;
 /// auth store, is Protected or Secret, so for a user whose auto set
 /// lacks the file's effect no agent write to it runs without the user's
 /// yes.
-#[cfg(unix)]
-// Not yet passing on Windows (a path beside the workspace in the temp dir judges Outside); open, see the Windows limits.
 #[test]
 fn every_loader_file_is_guarded_and_a_project_file_is_inside() {
     let dir = tempfile::tempdir().unwrap();

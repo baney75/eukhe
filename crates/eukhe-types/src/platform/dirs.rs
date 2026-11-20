@@ -200,7 +200,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn agent_dir_without_home_is_none() {
         with_env(

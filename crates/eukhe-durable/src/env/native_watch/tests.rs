@@ -355,7 +355,6 @@ async fn keeps_watching_after_a_callback_panics(options: NativeWatchOptions) {
 // Unix only.
 macro_rules! in_both_modes {
     ($($(#[$only:meta])* $scenario:ident),* $(,)?) => {
-        #[cfg(unix)]
         mod native_mode {
             $(
                 $(#[$only])*

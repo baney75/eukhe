@@ -90,7 +90,6 @@ fn settings_write_leaves_no_lock_artifact() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn settings_write_reclaims_a_crashed_holders_lock_directory() {
     let dir = tempfile::tempdir().unwrap();
@@ -133,7 +132,6 @@ fn settings_write_reports_contention_on_a_live_lock_directory() {
     drop(guard);
 }
 
-#[cfg(unix)]
 #[test]
 fn auth_write_heals_a_pre_compat_lock_file_artifact() {
     let dir = tempfile::tempdir().unwrap();

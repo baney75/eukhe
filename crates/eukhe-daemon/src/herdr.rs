@@ -1299,7 +1299,6 @@ mod tests {
         server.abort();
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn an_error_end_holds_then_blocks_with_the_message() {
         let (_dir, socket_path) = temp_socket("hold");
@@ -1332,7 +1331,6 @@ mod tests {
         server.abort();
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_retry_within_the_grace_keeps_the_pane_working() {
         let (_dir, socket_path) = temp_socket("retry");
@@ -1379,7 +1377,6 @@ mod tests {
         server.abort();
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn the_release_is_the_last_write_and_never_reclaims() {
         let (_dir, socket_path) = temp_socket("release");
@@ -1413,7 +1410,6 @@ mod tests {
     /// A session replacement must not inherit the predecessor's
     /// failure state: the successor's `session_start` publishes clean
     /// (idle), never the old blocked/error shape.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_replacement_resets_the_predecessor_failure_state() {
         let (_dir, socket_path) = temp_socket("reset");
@@ -1468,7 +1464,6 @@ mod tests {
 
     /// The stale-generation gate: a replaced reporter's racing boundary
     /// events never reach the wire — only the successor's do.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_stale_generation_reporter_never_writes() {
         let (_dir, socket_path) = temp_socket("stale");
@@ -1533,7 +1528,6 @@ mod tests {
     /// A stale-generation reporter never releases the successor's pane —
     /// and the dropped release still acks so the quit close does not
     /// stall on the timeout.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_stale_release_neither_writes_nor_stalls() {
         let (_dir, socket_path) = temp_socket("stale-release");
@@ -1645,7 +1639,6 @@ mod tests {
     /// A state that did not reach the wire is sent again until it lands,
     /// with no further boundary: a session that went idle while Herdr was
     /// unreachable still shows idle once Herdr answers.
-    #[cfg(unix)]
     #[tokio::test]
     async fn an_unsent_state_is_sent_again_until_it_lands() {
         let (_dir, socket_path) = temp_socket("resend");
@@ -1715,7 +1708,6 @@ mod tests {
     /// NOT recorded as published: the same state re-sends at the next
     /// boundary once the socket exists. The old queue-time marking
     /// deduped it away forever — this test fails on that shape.
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_state_is_re_sent_after_the_socket_comes_up() {
         let (_dir, socket_path) = temp_socket("late-boot");
@@ -1792,7 +1784,6 @@ mod tests {
         assert_eq!(distinct, all.len(), "duplicate seq minted: {all:?}");
     }
 
-    #[cfg(unix)]
     #[tokio::test]
     async fn a_dropped_reporter_stays_silent_without_releasing() {
         let (_dir, socket_path) = temp_socket("silent");

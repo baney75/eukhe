@@ -192,8 +192,6 @@ async fn kernel_arguments_repair_by_the_wire_contract() {
         .is_some_and(|message| message.starts_with("edit does not take `old_string`: ")));
 }
 
-#[cfg(unix)]
-// Not yet passing on Windows (the edit is rejected, the glob gives no next skip); open, see the Windows limits.
 #[tokio::test]
 async fn edit_grep_and_glob_share_the_read_anchors() {
     let dir = tempfile::tempdir().unwrap();
@@ -243,8 +241,6 @@ async fn edit_grep_and_glob_share_the_read_anchors() {
 
 /// The kernel's `glob` takes `skip`, and the continuation it returns gets
 /// the next paths.
-#[cfg(unix)]
-// Not yet passing on Windows (the edit is rejected, the glob gives no next skip); open, see the Windows limits.
 #[tokio::test]
 async fn glob_skip_continues_past_the_limit() {
     let dir = tempfile::tempdir().unwrap();

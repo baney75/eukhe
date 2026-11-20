@@ -278,7 +278,6 @@ mod tests {
     /// `list` and its shutdown) is never aborted. The supervisor itself
     /// asks the worker, the worker answers busy, nothing stops, and the
     /// worker's gate is released.
-    #[cfg(unix)]
     #[tokio::test]
     async fn an_idle_shutdown_never_stops_a_run_that_started_after_the_client_looked() {
         let dir = tempfile::TempDir::new().expect("temp dir");
