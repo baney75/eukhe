@@ -8,6 +8,9 @@
 //! the second running. The replacement worker replays the script from its
 //! journal: the cell's journaled result, the read run again.
 
+// Helpers used only by the test gated to Unix below.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
+
 use std::fs::File;
 use std::io::Write as _;
 use std::sync::mpsc::{self, Receiver};
@@ -151,6 +154,7 @@ fn reference() -> String {
     text
 }
 
+#[cfg(unix)] // A python cell (the kernel is Unix-only) and a FIFO (mkfifo).
 #[test]
 fn worker_killed_between_codemode_nested_calls() {
     let expected = reference();
