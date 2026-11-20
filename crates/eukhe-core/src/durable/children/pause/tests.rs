@@ -4,6 +4,8 @@
 //! wakes the run, which goes on with its whole context. A run that starts
 //! while paused holds before its first request and takes the messages that
 //! woke it into that request.
+// The kernel test is Unix-only; on Windows its imports go unused.
+#![cfg_attr(windows, allow(unused_imports))]
 
 use eukhe_chord::context::BACKGROUND_CONTEXT;
 use eukhe_durable::harness::types::{InputSubmissionDraft, WhenBusy};
@@ -71,6 +73,7 @@ async fn deliver(
     id.id()
 }
 
+#[cfg(unix)] // Runs a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_pause_finishes_the_running_call_holds_the_next_request_and_keeps_messages_in_order() {
     let _kernel = kernel_test_lock().await;

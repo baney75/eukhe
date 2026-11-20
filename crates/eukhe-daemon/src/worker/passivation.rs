@@ -587,6 +587,7 @@ mod tests {
     /// dispose killed the command (`exit -15`). The release holds while
     /// the kernel has background work; once the command settled and the
     /// run its notice woke parked, the release goes through.
+    #[cfg(unix)] // Runs a real RLM kernel, which runs on Unix only.
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_parked_child_keeps_its_kernel_while_a_background_job_runs() {
         const SESSION: &str = "child-background-job";
