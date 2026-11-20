@@ -757,8 +757,12 @@ impl ReplKernelManager {
     ///
     /// Returns an error when the abort signal is already cancelled or fires
     /// during the wait, when the kernel process fails to spawn or bootstrap,
-    /// or when the startup task itself fails to join.
+    /// or when the startup task itself fails to join. On Windows, always
+    /// [`super::KernelUnsupportedPlatform`]: the runtime is POSIX-only.
     pub async fn start(&self, options: KernelStartOptions) -> anyhow::Result<()> {
+        if let Some(refusal) = super::KernelUnsupportedPlatform::here() {
+            return Err(refusal.into());
+        }
         if let Some(signal) = &options.signal {
             if signal.is_aborted() {
                 return Err(anyhow!("Kernel startup aborted"));
