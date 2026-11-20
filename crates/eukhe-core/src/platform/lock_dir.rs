@@ -42,7 +42,7 @@ fn probe_mtime() -> (i64, i64) {
 }
 
 #[cfg(unix)]
-fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
+pub(crate) fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
     use nix::sys::stat::{utimensat, UtimensatFlags};
     use nix::sys::time::TimeSpec;
     let time = TimeSpec::new(seconds, nanoseconds);
@@ -58,7 +58,7 @@ fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
 /// the one way a directory opens) and only the attribute-write right.
 /// NTFS keeps 100ns, so the probe's 5ms survives.
 #[cfg(windows)]
-fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
+pub(crate) fn set_mtime(path: &Path, seconds: i64, nanoseconds: i64) -> io::Result<()> {
     use std::os::windows::fs::OpenOptionsExt as _;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     const FILE_WRITE_ATTRIBUTES: u32 = 0x0100;
