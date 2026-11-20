@@ -132,7 +132,7 @@ fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
             dirs.push((target, eukhe_types::platform::mode::mode_of(&meta)));
         } else {
             fs::copy(&source, &target)?;
-            fs::File::open(&target)?.sync_all()?;
+            super::fs::sync_file(&target)?;
         }
     }
     // Deepest first: a directory's mode may forbid writing into it.
