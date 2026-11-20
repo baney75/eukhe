@@ -306,6 +306,9 @@ async fn stop_target(target: &ReapTarget) -> ReapOutcome {
 /// unit's descendants, not only its leader); the group is signaled only
 /// while its leader is identity-verified alive, so the group id cannot
 /// name a recycled one.
+// The handle is an fd on Unix, closed early by its drop; the Windows
+// handle owns nothing to close.
+#[cfg_attr(windows, allow(clippy::drop_non_drop))]
 async fn stop_target_within(
     target: &ReapTarget,
     term_grace: Duration,

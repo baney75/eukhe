@@ -11,6 +11,9 @@ use super::{HandleId, Listener, Sink};
 /// The watch backend that installs nothing.
 pub(super) struct Backend;
 
+// The methods keep the signatures of the native backends they stand in
+// for, so the watcher calls every backend alike.
+#[allow(clippy::unused_self)]
 impl Backend {
     pub(super) fn new(_sink: Sink) -> Self {
         Self
