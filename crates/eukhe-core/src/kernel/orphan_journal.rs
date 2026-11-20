@@ -138,7 +138,8 @@ pub fn reap_kernel_orphan_processes(journal: &Path, kernel_pid: i32) -> anyhow::
     }
 }
 
-#[cfg(test)]
+// Kernel orphan start ids read the Unix ladder (proc:, ps:); the kernel is Unix-only.
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

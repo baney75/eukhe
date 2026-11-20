@@ -1,3 +1,6 @@
+// Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 
 use serde_json::json;

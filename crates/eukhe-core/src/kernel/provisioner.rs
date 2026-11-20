@@ -1573,6 +1573,7 @@ mod tests {
         )));
     }
 
+    #[cfg(unix)] // Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
     #[tokio::test]
     async fn startup_failure_surfaces_cause_and_duration() {
         let options = IpythonKernelProvisionerOptions {
@@ -1653,6 +1654,7 @@ mod tests {
     /// {})`): a background boot never surfaces its failure at the call site,
     /// and the swallowed failure stays recoverable — the next `ensure()` runs
     /// (and surfaces) a fresh attempt, the lazy first-call start.
+    #[cfg(unix)] // Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
     #[tokio::test]
     async fn prewarm_swallows_failure_and_keeps_lazy_fallback() {
         let options = IpythonKernelProvisionerOptions {

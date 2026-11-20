@@ -3,6 +3,8 @@
 //! call and result enters the transcript, a batch never runs more queries
 //! at once than the session's cap, a batch over the budget is refused with
 //! its exact text, and the queries' usage lands on the cell's call.
+// Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
+#![cfg(unix)]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};

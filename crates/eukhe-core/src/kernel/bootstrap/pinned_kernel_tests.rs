@@ -7,6 +7,8 @@
 //! between the open and the first call: the python tool answers with the
 //! failed fetch, and the other tools run (the model's laws on a failed
 //! setup in `laws/kernel_local.bend`; these tests run the real session).
+// Helpers of the kernel tests, which are Unix-only (KernelUnsupportedPlatform on Windows).
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 
 use std::collections::HashMap;
 use std::ffi::OsString;
@@ -342,6 +344,7 @@ async fn a_session_stored_with_the_notice_row_still_opens() {
 /// opened with a kernel; the machine then has none and is offline): the
 /// python tool answers with the failed fetch and the command that
 /// retries it, and the other tools run.
+#[cfg(unix)] // Runs the RLM kernel, which is Unix-only (KernelUnsupportedPlatform on Windows).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_failed_fetch_answers_the_python_tool_and_spares_the_other_tools() {
     let _env_lock = KERNEL_ENV_LOCK.lock().await;
