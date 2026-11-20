@@ -348,6 +348,7 @@ async fn remove_dir_all_if_present(path: &Path) -> Result<(), DownloadError> {
 }
 
 /// Makes the entries of `dir` durable.
+#[cfg(unix)]
 async fn sync_dir(dir: &Path) -> Result<(), DownloadError> {
     let io = |source| DownloadError::Io {
         path: dir.to_path_buf(),
@@ -359,6 +360,15 @@ async fn sync_dir(dir: &Path) -> Result<(), DownloadError> {
         .sync_all()
         .await
         .map_err(io)
+}
+
+/// A documented no-op on Windows: a directory opens as a file only with
+/// backup semantics, and NTFS writes a rename to its own journal.
+#[cfg(windows)]
+#[allow(clippy::unused_async)] // Same signature as the Unix sync.
+async fn sync_dir(dir: &Path) -> Result<(), DownloadError> {
+    let _ = dir;
+    Ok(())
 }
 
 #[cfg(test)]

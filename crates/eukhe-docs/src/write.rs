@@ -322,7 +322,7 @@ pub(crate) fn publish(
     };
     let unsynced = faults
         .inject(target, Stage::AfterRename)
-        .and_then(|()| File::open(directory)?.sync_all())
+        .and_then(|()| eukhe_types::platform::sync_directory(directory))
         .err();
     Ok(Placed { rebased, unsynced })
 }
