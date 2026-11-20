@@ -1,6 +1,5 @@
 //! The sweep of import and fork staging directories left behind.
 
-use std::fs::{File, FileTimes};
 use std::time::Duration;
 
 use super::*;
@@ -8,12 +7,19 @@ use super::*;
 /// The bound of the rule (`bend/staging.bend` `day`): a day.
 const STALE_AFTER: Duration = Duration::from_hours(24);
 
-/// Set the modification time of `path` to `age` ago.
+/// Set the modification time of `path` to `age` ago, through the lock's
+/// helper: a directory opens on Windows only with backup semantics and a
+/// write right.
 fn age(path: &Path, age: Duration) {
-    File::open(path)
-        .expect("open")
-        .set_times(FileTimes::new().set_modified(SystemTime::now() - age))
-        .expect("set times");
+    let at = (SystemTime::now() - age)
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .expect("after the epoch");
+    crate::platform::lock_dir::set_mtime(
+        path,
+        i64::try_from(at.as_secs()).expect("seconds"),
+        i64::from(at.subsec_nanos()),
+    )
+    .expect("set times");
 }
 
 /// A fresh staging directory for the session `name` under `sessions`.
