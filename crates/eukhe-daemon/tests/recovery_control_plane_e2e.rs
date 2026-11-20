@@ -36,7 +36,6 @@
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::Command;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -47,6 +46,8 @@ mod daemon;
 mod process;
 #[path = "support/process_table.rs"]
 mod process_table;
+#[path = "support/sigkill.rs"]
+mod sigkill_support;
 use daemon::supervisor_command;
 use process::Daemon;
 use process_table::child_pids_of;
@@ -110,12 +111,7 @@ fn distinct(values: Vec<String>) -> Vec<String> {
 /// `kill -9` an arbitrary pid: the harness only holds Child handles for
 /// the supervisors, while the workers are adopted pids on the wire.
 fn kill9(pid: u32) {
-    let status = Command::new("kill")
-        .arg("-9")
-        .arg(pid.to_string())
-        .status()
-        .expect("spawn kill");
-    assert!(status.success(), "kill -9 {pid} failed: {status}");
+    sigkill_support::sigkill(pid);
 }
 
 struct Client {

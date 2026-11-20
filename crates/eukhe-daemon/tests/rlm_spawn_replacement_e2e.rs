@@ -51,7 +51,7 @@
 use eukhe_types::platform::transport::StdStream;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -67,6 +67,8 @@ use serde_json::{json, Value};
 mod daemon;
 #[path = "support/process.rs"]
 mod process;
+#[path = "support/sigkill.rs"]
+mod sigkill_support;
 use daemon::supervisor_command;
 use process::Daemon;
 
@@ -415,12 +417,7 @@ async fn concurrent_spawns_prompt_exactly_once_across_a_worker_replacement() {
             .to_string()
     };
     let kid_a_pid = worker_pid(&agent_dir, &socket, &kid_a_worker_id);
-    let killed = Command::new("kill")
-        .arg("-9")
-        .arg(kid_a_pid.to_string())
-        .status()
-        .expect("kill kid-a worker");
-    assert!(killed.success(), "kill -9 {kid_a_pid}");
+    sigkill_support::sigkill(kid_a_pid);
 
     // Admit the task prompts now: all four fire concurrently - kid-a's
     // into a worker mid-replacement. A failed prompt reruns with the same

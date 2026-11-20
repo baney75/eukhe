@@ -136,11 +136,16 @@ fn plain_boot_revives_only_journal_busy_workers() {
     daemon.child.kill().expect("kill -9 supervisor");
     let _ = daemon.child.wait();
     for pid in &worker_pids {
+        #[cfg(unix)]
         std::process::Command::new("kill")
             .arg("-9")
             .arg(pid.to_string())
             .status()
             .expect("kill -9 worker");
+        // No `kill` reaches a native process on Windows; a worker already
+        // gone is no failure here either, the wait below holds.
+        #[cfg(windows)]
+        let _ = eukhe_types::platform::process::kill_process(*pid);
     }
     let deadline = Instant::now() + Duration::from_secs(5);
     for pid in &worker_pids {
