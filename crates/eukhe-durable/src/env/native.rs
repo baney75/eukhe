@@ -278,15 +278,22 @@ fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
 /// Opens `target` to read. `no_follow` refuses a final-component symlink
 /// with ELOOP's Windows code (`ERROR_CANT_RESOLVE_FILENAME`), from an
 /// `lstat` just before the open: a link swapped in between them is
-/// followed.
+/// followed. Backup semantics open a directory too, as libuv's open does,
+/// so the caller's type check reports it (EISDIR) instead of the access
+/// error a plain open of a directory gets.
 #[cfg(windows)]
 fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     if no_follow && std::fs::symlink_metadata(target)?.file_type().is_symlink() {
         return Err(io::Error::from_raw_os_error(
             super::node_error::ERROR_CANT_RESOLVE_FILENAME,
         ));
     }
-    std::fs::OpenOptions::new().read(true).open(target)
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(target)
 }
 
 /// `mkdir(path, { recursive, mode })`: every directory it creates gets
@@ -575,6 +582,15 @@ impl NativeExecutionEnv {
         abort_result(cx, Some(&resolved))?;
         let target = resolved.clone();
         let flushed = blocking(move || {
+            // A directory does not open for writing on Windows (an access
+            // error); the TS checks for it first there, and so does this.
+            #[cfg(windows)]
+            if std::fs::metadata(&target)
+                .map_err(|error| io::Error::new(error.kind(), SyscallError("stat", error)))?
+                .is_dir()
+            {
+                return Ok(false);
+            }
             let file = std::fs::OpenOptions::new()
                 .read(true)
                 .write(true)
