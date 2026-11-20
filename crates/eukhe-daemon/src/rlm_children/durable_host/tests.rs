@@ -1095,6 +1095,7 @@ async fn a_workspace_in_the_agent_dir_moves_to_the_work_root() {
 /// symlink (made first as `<old>.link`) took the old place: the next use
 /// renames the symlink there.
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[tokio::test]
 async fn a_workspace_move_cut_before_its_link_ends_on_next_use() {
     let dir = tempfile::tempdir().unwrap();

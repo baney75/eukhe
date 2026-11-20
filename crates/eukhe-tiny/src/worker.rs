@@ -848,6 +848,7 @@ mod tests {
 
     /// A run dir that exists with looser permissions is made 0700.
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[tokio::test]
     async fn binding_makes_an_existing_run_dir_private() {
         let dir = tempfile::tempdir().unwrap();

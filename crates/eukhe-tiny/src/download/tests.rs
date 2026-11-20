@@ -275,6 +275,7 @@ async fn checksum_mismatch_installs_nothing() {
 /// A staging dir that cannot be removed after a failed download leaves the
 /// download's own error as the result (the cleanup failure is logged).
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[tokio::test]
 async fn a_failed_cleanup_keeps_the_download_error() {
     use std::os::unix::fs::PermissionsExt;

@@ -115,7 +115,6 @@ fn fs_requests_map_cwd_and_paths_and_reject_outside_ones() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn fs_requests_reject_a_symlink_in_a_mount_that_points_out_of_every_mount() {
     let root = tempfile::tempdir().expect("tempdir");

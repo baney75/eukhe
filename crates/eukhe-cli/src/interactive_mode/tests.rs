@@ -472,6 +472,7 @@ fn fork_startup_selection_expands_a_tilde_selector() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture is a FIFO, which Windows has no counterpart for.
 #[test]
 fn fork_startup_selection_rejects_a_fifo_source_without_hanging() {
     // A FIFO with no writer blocks a read forever; the launch must error

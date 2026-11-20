@@ -1508,6 +1508,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[test]
     fn socket_close_reports_daemon_closing_reason() {
         use std::io::{BufRead, Write};

@@ -355,6 +355,7 @@ async fn snapshot_excludes_secret_named_files_in_delta_and_baseline() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[tokio::test]
 async fn snapshot_captures_in_root_symlinks_and_excludes_escaping_ones() {
     let repo = tempfile::tempdir().unwrap();
@@ -397,6 +398,7 @@ async fn snapshot_captures_in_root_symlinks_and_excludes_escaping_ones() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[tokio::test]
 async fn snapshot_never_reads_behind_symlinked_ancestors() {
     let repo = tempfile::tempdir().unwrap();
@@ -1060,6 +1062,7 @@ async fn snapshot_rejects_unusable_staging_directories() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture is a FIFO, which Windows has no counterpart for.
 #[tokio::test]
 async fn untracked_special_paths_never_block_the_leaf_open() {
     // Regression guard: a plain read-only open of a FIFO (or a unix
@@ -1104,6 +1107,7 @@ async fn untracked_special_paths_never_block_the_leaf_open() {
 }
 
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[tokio::test]
 async fn staging_and_staged_files_are_owner_private() {
     let repo = tempfile::tempdir().unwrap();
@@ -1187,6 +1191,7 @@ async fn snapshot_from_a_subdirectory_captures_the_whole_repository() {
 }
 
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[tokio::test]
 async fn snapshot_records_executable_bits() {
     let repo = tempfile::tempdir().unwrap();
@@ -1230,6 +1235,7 @@ async fn snapshot_records_executable_bits() {
 }
 
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[tokio::test]
 async fn head_tree_baseline_restates_head_mode_under_core_filemode_false() {
     use std::os::unix::fs::PermissionsExt;

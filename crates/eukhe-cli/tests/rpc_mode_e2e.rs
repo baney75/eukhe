@@ -532,6 +532,7 @@ fn rpc_parse_and_unknown_command_errors() {
 /// queued inputs are withdrawn, the ordinary scope settles); the next
 /// prompt runs alone.
 #[cfg(unix)]
+// Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
 #[test]
 fn rpc_steer_and_follow_up_queue_then_abort() {
     // The first turn's request holds at the provider on a gate this test

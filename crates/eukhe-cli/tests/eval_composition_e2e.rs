@@ -66,7 +66,6 @@ fn run(home: &Path, args: &[&str], script: &Value) -> (String, String, i32) {
 
 #[cfg(unix)]
 fn make_executable(path: &Path) {
-    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     let mut permissions = std::fs::metadata(path).unwrap().permissions();
     permissions.set_mode(0o755);
@@ -189,6 +188,7 @@ fn without_assistant_messages(value: &Value) -> Value {
 /// consult passes, and the run stops without a row (the TS shape, probed
 /// against the binary: the stop surfaces through the exit contract only).
 #[cfg(unix)]
+// Unix only: its verifier fixture is a shell script with an execute bit.
 #[test]
 fn verifier_gate_pass_stops_the_run_with_structured_events_in_run() {
     let home = isolated_home();
@@ -338,6 +338,7 @@ fn verifier_gate_pass_stops_the_run_with_structured_events_in_run() {
 /// one, the TS print-mode stderr line names the attempt and exit code, and
 /// the stop writes no row (the exit contract carries it).
 #[cfg(unix)]
+// Unix only: its verifier fixture is a shell script with an execute bit.
 #[test]
 fn verifier_gate_failure_exhausts_retries_and_exits_one() {
     let home = isolated_home();
@@ -394,6 +395,7 @@ fn verifier_gate_failure_exhausts_retries_and_exits_one() {
 /// Text mode prints the final answer on a passing verifier run, and stays
 /// quiet about the autonomous machinery (the stop writes nothing).
 #[cfg(unix)]
+// Unix only: its verifier fixture is a shell script with an execute bit.
 #[test]
 fn text_mode_verifier_pass_prints_the_final_answer() {
     let home = isolated_home();

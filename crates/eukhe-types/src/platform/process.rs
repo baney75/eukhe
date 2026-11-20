@@ -694,6 +694,7 @@ mod liveness_tests {
     /// this test with a `PATH` whose only `ps` is a fake that would turn
     /// any spawn into `Some("ps:...")`.
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[test]
     fn a_dead_pid_has_no_identity_and_spawns_no_ps() {
         use std::os::unix::fs::PermissionsExt;

@@ -634,6 +634,7 @@ fn wave_b9_session_navigation_wire_shapes() {
 /// Wave b9: the prompt-admission surface - the parse-time registration
 /// errors, the cancel status ladder, and the cancelled queued prompt.
 #[cfg(unix)]
+// Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
 #[test]
 fn wave_b9_prompt_admission_wire_shapes() {
     let _serial = serial_lock();

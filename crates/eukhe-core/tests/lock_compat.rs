@@ -91,6 +91,7 @@ fn settings_write_leaves_no_lock_artifact() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture ages a file's mtime through a Unix call.
 #[test]
 fn settings_write_reclaims_a_crashed_holders_lock_directory() {
     let dir = tempfile::tempdir().unwrap();
@@ -134,6 +135,7 @@ fn settings_write_reports_contention_on_a_live_lock_directory() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture ages a file's mtime through a Unix call.
 #[test]
 fn auth_write_heals_a_pre_compat_lock_file_artifact() {
     let dir = tempfile::tempdir().unwrap();

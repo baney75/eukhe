@@ -279,6 +279,7 @@ mod tests {
     /// asks the worker, the worker answers busy, nothing stops, and the
     /// worker's gate is released.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn an_idle_shutdown_never_stops_a_run_that_started_after_the_client_looked() {
         let dir = tempfile::TempDir::new().expect("temp dir");

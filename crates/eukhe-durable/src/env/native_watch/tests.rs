@@ -356,6 +356,7 @@ async fn keeps_watching_after_a_callback_panics(options: NativeWatchOptions) {
 macro_rules! in_both_modes {
     ($($(#[$only:meta])* $scenario:ident),* $(,)?) => {
         #[cfg(unix)]
+        // Unix only: the native watcher is a polling stub on Windows.
         mod native_mode {
             $(
                 $(#[$only])*
@@ -443,6 +444,7 @@ async fn refuses_a_tree_over_the_directory_budget_and_stops_with_an_error_when_o
 /// An unreadable target directory fails `open` with node.ts `toFileError` of
 /// Node's `scandir` error.
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn refuses_an_unreadable_target_directory() {
     use std::os::unix::fs::PermissionsExt;

@@ -2,7 +2,10 @@
 //! terminal and environment). Windows has no `exec`: the program runs as
 //! a child that inherits this process's console and handles, and this
 //! process exits with its exit code once it ends, so a caller that waits
-//! on this pid still sees the replacement's end and code.
+//! on this pid still sees the replacement's end and code. The caller ends
+//! what it holds first (its runtime, connections and locks): the waiting
+//! process keeps nothing but its own handles to the child. Each restart
+//! nests one more such waiting process.
 
 use std::process::Command;
 

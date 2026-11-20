@@ -91,6 +91,7 @@ mod tests {
     /// and the env; an empty env is no env. The default sits in the agent
     /// dir's run dir.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[test]
     fn the_socket_is_the_flag_then_the_env_then_the_default() {
         let os = |value: &'static str| Some(OsStr::new(value));
@@ -141,6 +142,7 @@ mod tests {
     /// Without `HOME` a tilde path stays as written (relative, so under
     /// the cwd).
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[test]
     fn a_tilde_without_home_stays() {
         let cwd = std::env::current_dir().unwrap();
@@ -152,6 +154,7 @@ mod tests {
 
     /// A non-UTF-8 env value names its socket by its own bytes.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[test]
     fn a_non_utf8_env_socket_keeps_its_bytes() {
         use std::os::unix::ffi::OsStrExt;

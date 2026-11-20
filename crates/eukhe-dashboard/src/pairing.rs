@@ -407,9 +407,11 @@ impl Gate {
 mod tests {
     use super::*;
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     use std::os::unix::fs::PermissionsExt as _;
 
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[test]
     fn the_opener_page_is_private_and_redirects() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -428,6 +430,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[test]
     fn a_token_is_kept_private_until_rotated() {
         let dir = tempfile::tempdir().expect("tempdir");

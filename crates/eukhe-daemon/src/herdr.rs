@@ -1246,6 +1246,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: its expected values are Unix paths.
     #[tokio::test]
     async fn the_reporter_publishes_the_wire_contract_states() {
         let (_dir, socket_path) = temp_socket("wire");
@@ -1300,6 +1301,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn an_error_end_holds_then_blocks_with_the_message() {
         let (_dir, socket_path) = temp_socket("hold");
@@ -1333,6 +1335,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_retry_within_the_grace_keeps_the_pane_working() {
         let (_dir, socket_path) = temp_socket("retry");
@@ -1380,6 +1383,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn the_release_is_the_last_write_and_never_reclaims() {
         let (_dir, socket_path) = temp_socket("release");
@@ -1414,6 +1418,7 @@ mod tests {
     /// failure state: the successor's `session_start` publishes clean
     /// (idle), never the old blocked/error shape.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_replacement_resets_the_predecessor_failure_state() {
         let (_dir, socket_path) = temp_socket("reset");
@@ -1469,6 +1474,7 @@ mod tests {
     /// The stale-generation gate: a replaced reporter's racing boundary
     /// events never reach the wire — only the successor's do.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_stale_generation_reporter_never_writes() {
         let (_dir, socket_path) = temp_socket("stale");
@@ -1534,6 +1540,7 @@ mod tests {
     /// and the dropped release still acks so the quit close does not
     /// stall on the timeout.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_stale_release_neither_writes_nor_stalls() {
         let (_dir, socket_path) = temp_socket("stale-release");
@@ -1568,6 +1575,7 @@ mod tests {
     /// pure decision rejects a foreign owner (the `chown`-free mock: a
     /// uid that is not ours).
     #[cfg(unix)]
+    // Unix only: its fixture makes links with std::os::unix::fs::symlink.
     #[tokio::test]
     async fn the_pane_socket_fence_decides_by_type_and_owner() {
         let (_dir, socket_path) = temp_socket("fence");
@@ -1623,6 +1631,7 @@ mod tests {
     /// after one slow lstat, which a loaded machine produces: 1.4 s under
     /// stress, flk/l12-herdr/diag2.log.)
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_stalled_fence_check_refuses_only_until_it_finishes() {
         let (_dir, socket_path) = temp_socket("stalled");
@@ -1646,6 +1655,7 @@ mod tests {
     /// with no further boundary: a session that went idle while Herdr was
     /// unreachable still shows idle once Herdr answers.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn an_unsent_state_is_sent_again_until_it_lands() {
         let (_dir, socket_path) = temp_socket("resend");
@@ -1666,6 +1676,7 @@ mod tests {
     /// drops the report before the connect, exactly like a missing
     /// socket.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_reporter_into_a_non_socket_target_stays_silent() {
         // A LIVE listener exists at the real path: the impostor the
@@ -1716,6 +1727,7 @@ mod tests {
     /// boundary once the socket exists. The old queue-time marking
     /// deduped it away forever — this test fails on that shape.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_state_is_re_sent_after_the_socket_comes_up() {
         let (_dir, socket_path) = temp_socket("late-boot");
@@ -1793,6 +1805,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_dropped_reporter_stays_silent_without_releasing() {
         let (_dir, socket_path) = temp_socket("silent");

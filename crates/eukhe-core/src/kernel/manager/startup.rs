@@ -873,6 +873,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[test]
     fn kernel_stderr_log_rotation_tightens_a_world_readable_log() {
         use std::io::Write;

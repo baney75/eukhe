@@ -315,6 +315,7 @@ fn spawn_cell() -> &'static str {
 /// the parent answers the report once and never runs the no-reply notice
 /// turn its settle would otherwise queue.
 #[cfg(unix)]
+// Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
 #[test]
 fn a_child_that_reported_exits_without_waking_its_parent() {
     let dir = tempfile::TempDir::new().expect("temp dir");

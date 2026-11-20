@@ -1710,6 +1710,7 @@ mod tombstone_usage_tests {
     /// link is gone, so re-canonicalizing the caller's path answers the
     /// fallback form and would miss the edge entirely).
     #[cfg(unix)]
+    // Unix only: its fixture makes links with std::os::unix::fs::symlink.
     #[test]
     fn symlink_delete_tombstones_the_edge_keyed_at_the_target() {
         let root = tempfile::tempdir().unwrap();
@@ -1763,6 +1764,7 @@ mod tombstone_usage_tests {
     /// capture reads nothing there - the blocking open would hang a
     /// FIFO's read forever - and the tombstone still lands bare.
     #[cfg(unix)]
+    // Unix only: its fixture is a FIFO, which Windows has no counterpart for.
     #[test]
     fn a_non_regular_session_path_captures_nothing() {
         // The short tempfile dir name keeps the socket path below the

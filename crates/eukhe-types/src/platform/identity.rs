@@ -46,6 +46,7 @@ mod tests {
     use super::*;
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[test]
     fn identity_is_stable_and_distinguishes_files() {
         let dir = tempfile::TempDir::new().expect("temp dir");

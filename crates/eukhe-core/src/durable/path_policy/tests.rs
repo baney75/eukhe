@@ -17,8 +17,6 @@ use super::*;
 /// auth store, is Protected or Secret, so for a user whose auto set
 /// lacks the file's effect no agent write to it runs without the user's
 /// yes.
-#[cfg(unix)]
-// Not yet passing on Windows (a path beside the workspace in the temp dir judges Outside); open, see the Windows limits.
 #[test]
 fn every_loader_file_is_guarded_and_a_project_file_is_inside() {
     let dir = tempfile::tempdir().unwrap();
@@ -72,23 +70,24 @@ fn every_loader_file_is_guarded_and_a_project_file_is_inside() {
             .map(|file| (file.clone(), false))
             .collect::<Vec<_>>()
     );
-    // The fixture world lives in the OS temp dir, a workspace root: a path
-    // beside the workspace inside it is Inside; one outside both roots is Outside.
     assert_eq!(
         [
             eukhe_shell::paths::judge_path(&policy, &agent_dir.join("auth.json")).class,
             eukhe_shell::paths::judge_path(&policy, &home.join(".ssh/id_ed25519")).class,
             eukhe_shell::paths::judge_path(&policy, &cwd.join("src/main.rs")).class,
+        ],
+        [PathClass::Secret, PathClass::Secret, PathClass::Inside]
+    );
+    // The fixture world lives in the OS temp dir, a workspace root: a path
+    // beside the workspace inside it is Inside; one outside both roots is Outside.
+    #[cfg(unix)]
+    // Not yet passing on Windows (a path beside the workspace in the temp dir judges Outside); open, see the Windows limits.
+    assert_eq!(
+        [
             eukhe_shell::paths::judge_path(&policy, &top.join("elsewhere.txt")).class,
             eukhe_shell::paths::judge_path(&policy, std::path::Path::new("/elsewhere.txt")).class,
         ],
-        [
-            PathClass::Secret,
-            PathClass::Secret,
-            PathClass::Inside,
-            PathClass::Inside,
-            PathClass::Outside
-        ]
+        [PathClass::Inside, PathClass::Outside]
     );
 }
 
@@ -140,6 +139,7 @@ fn every_state_part_is_protected_or_secret() {
 /// resolution of `ws/x`, which lost the loop: the write ran unasked as
 /// Inside.
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[test]
 fn a_write_whose_links_looped_asks_even_when_its_real_path_is_inside() {
     let dir = tempfile::tempdir().unwrap();

@@ -209,7 +209,59 @@ pub fn resolve(absolute: &Path) -> RealPath {
             }
         }
     }
+    #[cfg(windows)]
+    let path = if looped { path } else { long_form(path) };
     RealPath { path, looped }
+}
+
+/// The one spelling of `path` on Windows: the part that exists in its
+/// canonical form (an 8.3 short name such as `RUNNER~1` spelled out, each
+/// name in its on-disk case), without the `\\?\` prefix, and the rest as
+/// written. Two spellings of one place then judge alike.
+#[cfg(windows)]
+fn long_form(path: PathBuf) -> PathBuf {
+    let mut rest = Vec::new();
+    let mut existing = path.as_path();
+    loop {
+        if let Ok(canonical) = std::fs::canonicalize(existing) {
+            let mut long = without_verbatim(&canonical);
+            long.extend(rest.iter().rev());
+            return long;
+        }
+        match (existing.parent(), existing.file_name()) {
+            (Some(parent), Some(name)) => {
+                rest.push(name.to_owned());
+                existing = parent;
+            }
+            (Some(_) | None, None) | (None, Some(_)) => return path,
+        }
+    }
+}
+
+/// `\\?\C:\x` as `C:\x` and `\\?\UNC\server\share\x` as
+/// `\\server\share\x`; any other path as it is.
+#[cfg(windows)]
+fn without_verbatim(path: &Path) -> PathBuf {
+    use std::path::Prefix;
+    let mut components = path.components();
+    let Some(Component::Prefix(prefix)) = components.next() else {
+        return path.to_path_buf();
+    };
+    let mut plain = match prefix.kind() {
+        Prefix::VerbatimDisk(drive) => PathBuf::from(format!("{}:", char::from(drive))),
+        Prefix::VerbatimUNC(server, share) => {
+            let mut unc = OsString::from(r"\\");
+            unc.push(server);
+            unc.push(r"\");
+            unc.push(share);
+            PathBuf::from(unc)
+        }
+        Prefix::Verbatim(_) | Prefix::DeviceNS(_) | Prefix::UNC(..) | Prefix::Disk(_) => {
+            return path.to_path_buf()
+        }
+    };
+    plain.extend(components);
+    plain
 }
 
 /// The real path of `absolute` ([`resolve`]).
@@ -285,6 +337,25 @@ mod windows_tests {
                 PathBuf::from(r"D:\x"),
                 PathBuf::from(r"C:\no-such-dir\b"),
             ]
+        );
+    }
+
+    /// The temp dir as `%TEMP%` spells it (an 8.3 short name on GitHub's
+    /// runners) and as `canonicalize` spells it (`\\?\`, long names)
+    /// resolve to one path, so a policy root and a judged path agree.
+    #[test]
+    fn two_spellings_of_one_dir_resolve_alike() {
+        let dir = tempfile::tempdir().unwrap();
+        let canonical = std::fs::canonicalize(dir.path()).unwrap();
+        let (given, long) = (
+            resolve(&dir.path().join("new.txt")).into_path(),
+            resolve(&canonical.join("new.txt")).into_path(),
+        );
+        assert_eq!(given, long);
+        assert!(
+            !given.to_string_lossy().starts_with(r"\\?\"),
+            "{}",
+            given.display()
         );
     }
 }

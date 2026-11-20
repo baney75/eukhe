@@ -228,6 +228,7 @@ fn auto_discovers_project_prompts_with_overrides() {
 
 /// Symlinked user and project resources resolve once.
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[test]
 fn resolves_symlinked_user_and_project_resources_once() {
     use std::os::unix::fs::symlink;
@@ -388,6 +389,7 @@ fn home_agents_skills_stays_user_scoped_when_cwd_is_under_home() {
 
 /// Symlink layout (see `resolves_symlinked_user_and_project_resources_once`).
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[test]
 fn user_skill_entries_dedupe_when_agent_skills_symlinks_agents_skills() {
     use std::os::unix::fs::symlink;

@@ -65,17 +65,48 @@ pub fn sync_file(path: &Path) -> io::Result<()> {
 
 /// Commit one file's content, opened by path: `FlushFileBuffers` needs a
 /// handle with write access, so the file opens for writing (appending
-/// nothing).
+/// nothing). A read-only file (`fs::copy` carries the attribute over)
+/// loses the attribute for the flush and gets it back after.
 ///
 /// # Errors
 ///
-/// Returns the OS error of the open or the sync.
+/// Returns the OS error of the open, the sync or an attribute change.
 #[cfg(windows)]
 pub fn sync_file(path: &Path) -> io::Result<()> {
-    std::fs::OpenOptions::new()
-        .write(true)
-        .open(path)?
-        .sync_all()
+    let flush = || {
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(path)?
+            .sync_all()
+    };
+    let mut permissions = std::fs::metadata(path)?.permissions();
+    if !permissions.readonly() {
+        return flush();
+    }
+    #[allow(clippy::permissions_set_readonly_false)]
+    permissions.set_readonly(false);
+    std::fs::set_permissions(path, permissions.clone())?;
+    let flushed = flush();
+    permissions.set_readonly(true);
+    let restored = std::fs::set_permissions(path, permissions);
+    flushed.and(restored)
+}
+
+/// Make `link` a symbolic link to the directory `target`, which need not
+/// exist yet (Windows keeps directory and file links apart).
+///
+/// # Errors
+///
+/// Returns the OS error of the link.
+pub fn symlink_dir(target: &Path, link: &Path) -> io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(target, link)
+    }
+    #[cfg(windows)]
+    {
+        std::os::windows::fs::symlink_dir(target, link)
+    }
 }
 
 /// Make `link` a symbolic link to `target`.
@@ -155,5 +186,9 @@ pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
         return std::fs::rename(from, to);
     }
     std::fs::hard_link(from, to)?;
-    std::fs::remove_file(from)
+    // A source that cannot go (read-only, or open without delete sharing)
+    // takes its new name back, so a retry finds `to` free again.
+    std::fs::remove_file(from).inspect_err(|_| {
+        let _ = std::fs::remove_file(to);
+    })
 }

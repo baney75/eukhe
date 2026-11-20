@@ -187,6 +187,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: its expected values are Unix paths.
     #[test]
     fn agent_dir_default_under_home() {
         with_env(
@@ -200,7 +201,6 @@ mod tests {
         );
     }
 
-    #[cfg(unix)]
     #[test]
     fn agent_dir_without_home_is_none() {
         with_env(

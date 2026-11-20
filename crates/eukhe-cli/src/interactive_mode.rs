@@ -105,7 +105,11 @@ pub fn run_interactive_mode(options: &RunOptions) -> Result<i32> {
         }
     })?;
     if let Some(relaunch) = relaunch {
-        // The runtime's threads end with the process image.
+        // On Unix the runtime's threads end with the process image. Windows
+        // keeps this process waiting on the new one, so the runtime's
+        // connections and tasks end now.
+        #[cfg(windows)]
+        runtime.shutdown_background();
         return Err(start_again(&relaunch, options));
     }
     // tmux (verified on 3.2a) can drop the pane's final output when the

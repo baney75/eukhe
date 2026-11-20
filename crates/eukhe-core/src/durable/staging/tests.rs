@@ -56,6 +56,7 @@ fn name(path: &Path) -> String {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 #[test]
 fn sweeps_only_staging_dirs_and_tombstones_untouched_past_the_bound() {
     let dir = tempfile::tempdir().expect("tempdir");

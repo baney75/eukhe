@@ -203,10 +203,12 @@ fn pipe_bits(name: &str) -> Option<(u64, u64)> {
 ///
 /// # Errors
 ///
-/// The file does not read (`NotFound` when there is none), or names no
+/// The file does not read (`NotFound` when there is none), is outside this
+/// user's profile (`PermissionDenied`, [`require_own_dir`]), or names no
 /// pipe eukhe made (`InvalidData`).
 fn read_pipe_name(path: &Path) -> std::io::Result<String> {
     let text = std::fs::read_to_string(path)?;
+    require_own_dir(path)?;
     let name = text.trim_end();
     if pipe_bits(name).is_none() {
         return Err(std::io::Error::new(
@@ -215,6 +217,31 @@ fn read_pipe_name(path: &Path) -> std::io::Result<String> {
         ));
     }
     Ok(name.to_owned())
+}
+
+/// Refuse an endpoint file outside this user's profile: another user who
+/// can write its dir could put a file there that names their own pipe.
+///
+/// # Errors
+///
+/// `PermissionDenied` when the file's dir is not in the profile
+/// ([`is_in_own_profile`](crate::platform::access::is_in_own_profile)).
+fn require_own_dir(path: &Path) -> std::io::Result<()> {
+    let dir = match path.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir,
+        Some(_) | None => Path::new("."),
+    };
+    if crate::platform::access::is_in_own_profile(dir) {
+        return Ok(());
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        format!(
+            "{} is outside your user profile, where another user could replace it; \
+             pass --daemon-socket with a path under %USERPROFILE%",
+            path.display()
+        ),
+    ))
 }
 
 /// The random bits of the pipe the endpoint file at `path` names (an
@@ -341,6 +368,7 @@ impl Drop for PipeListener {
 /// replaced; one naming a live pipe refuses the bind (`AddrInUse`), and
 /// any other file there is left alone and refuses it (`AlreadyExists`).
 fn publish(path: &Path, name: &str) -> std::io::Result<()> {
+    require_own_dir(path)?;
     let lock = BindLock::take(path)?;
     let staged = work_file(path, &format!("{}.staged", std::process::id()));
     std::fs::write(&staged, format!("{name}\n"))?;
@@ -763,6 +791,28 @@ mod tests {
                 Some(std::io::ErrorKind::AlreadyExists),
                 "my notes\n".to_owned()
             )
+        );
+    }
+
+    /// An endpoint outside the user's profile is refused on both ends: the
+    /// bind writes no file there, and a client never trusts a file there.
+    #[tokio::test]
+    async fn an_endpoint_outside_the_profile_is_refused() {
+        let windows = std::env::var_os("SystemRoot").expect("SystemRoot");
+        let dir = tempfile::Builder::new()
+            .prefix("eukhe-outside-")
+            .tempdir_in(Path::new(&windows).join("Temp"))
+            .expect("dir in the Windows temp dir");
+        let path = dir.path().join("daemon.sock");
+        let refused = bind_tokio(&path).err().map(|error| error.kind());
+        assert_eq!(
+            (refused, path.exists()),
+            (Some(std::io::ErrorKind::PermissionDenied), false)
+        );
+        std::fs::write(&path, format!("{}\n", new_pipe_name().expect("name"))).expect("plant");
+        assert_eq!(
+            read_pipe_name(&path).err().map(|error| error.kind()),
+            Some(std::io::ErrorKind::PermissionDenied)
         );
     }
 

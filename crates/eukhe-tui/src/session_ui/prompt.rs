@@ -1384,6 +1384,7 @@ mod tests {
     /// most, as the ack cap did, and still settles with its real answer
     /// instead of a lost-ack row.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_long_session_command_holds_later_submits_for_the_ack_cap_at_most() {
         let dir = tempfile::TempDir::new().expect("temp dir");

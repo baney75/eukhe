@@ -753,6 +753,7 @@ mod tests {
     /// behind `/var` -> `/private/var`): the walk holds canonical paths while
     /// the jobs recorded the linked spelling, and both still cancel.
     #[cfg(unix)]
+    // Unix only: its fixture makes links with std::os::unix::fs::symlink.
     #[test]
     fn finalize_cancels_a_tree_whose_jobs_recorded_a_symlinked_path() {
         let root = tempfile::tempdir().unwrap();

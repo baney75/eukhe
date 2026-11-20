@@ -20,9 +20,15 @@ fn node_arch() -> &'static str {
     }
 }
 
+/// Node `os.release()`, read once per process.
+pub(crate) fn node_release() -> &'static str {
+    static RELEASE: LazyLock<String> = LazyLock::new(read_node_release);
+    &RELEASE
+}
+
 /// Node `os.release()`: the kernel release (`uname -r`).
 #[cfg(unix)]
-pub(crate) fn node_release() -> String {
+fn read_node_release() -> String {
     rustix::system::uname()
         .release()
         .to_string_lossy()
@@ -33,7 +39,7 @@ pub(crate) fn node_release() -> String {
 /// the `[Version 10.0.26100.1234]` line `cmd /c ver` prints (safe Rust
 /// has no version query); empty when `ver` cannot run.
 #[cfg(windows)]
-pub(crate) fn node_release() -> String {
+fn read_node_release() -> String {
     std::process::Command::new("cmd")
         .args(["/d", "/c", "ver"])
         .output()
@@ -41,20 +47,20 @@ pub(crate) fn node_release() -> String {
         .unwrap_or_default()
 }
 
-/// The `<major>.<minor>.<build>` of a `ver` banner.
+/// The `<major>.<minor>.<build>` of a `ver` banner: the first dotted
+/// number in its brackets, whatever word the locale prints before it.
 #[cfg(any(windows, test))]
 fn windows_release(banner: &str) -> String {
     banner
-        .split_once("Version ")
-        .and_then(|(_, rest)| rest.split(']').next())
-        .map(|version| {
-            version
-                .trim()
-                .split('.')
-                .take(3)
-                .collect::<Vec<_>>()
-                .join(".")
+        .split('[')
+        .nth(1)
+        .and_then(|inside| inside.split(']').next())
+        .and_then(|inside| {
+            inside.split_whitespace().find(|word| {
+                word.contains('.') && word.chars().all(|c| c.is_ascii_digit() || c == '.')
+            })
         })
+        .map(|version| version.split('.').take(3).collect::<Vec<_>>().join("."))
         .unwrap_or_default()
 }
 
@@ -91,6 +97,10 @@ mod tests {
         assert_eq!(
             windows_release("\r\nMicrosoft Windows [Version 10.0.26100.4652]\r\n"),
             "10.0.26100"
+        );
+        assert_eq!(
+            windows_release("\r\nMicrosoft Windows [version 10.0.19045.3803]\r\n"),
+            "10.0.19045"
         );
     }
 }

@@ -136,6 +136,7 @@ pub(super) fn kill_process_tree(pid: u32) {
 
 /// `runCommand`: stdout and exit status of a helper command, killed after
 /// `timeout`.
+#[cfg(unix)]
 async fn run_command(command: &str, args: &[&str], timeout: Duration) -> (String, Option<i32>) {
     let Ok(mut child) = tokio::process::Command::new(command)
         .args(args)
@@ -260,29 +261,15 @@ async fn default_shell_config() -> Result<ShellConfig, ExecutionError> {
     })
 }
 
-/// The shell without a custom path on Windows: Git Bash under
-/// `%ProgramFiles%` (or `%ProgramFiles(x86)%`), else the first
-/// `bash.exe` `where` finds; the legacy WSL launcher in System32 reads
-/// its script from stdin.
+/// The shell without a custom path on Windows: the bash eukhe-core runs
+/// too ([`eukhe_types::platform::shell::find_windows_bash`]), never the
+/// WSL launcher in System32.
 #[cfg(windows)]
+#[allow(clippy::unused_async)]
 async fn default_shell_config() -> Result<ShellConfig, ExecutionError> {
-    for root in ["ProgramFiles", "ProgramFiles(x86)"] {
-        let Some(root) = std::env::var_os(root) else {
-            continue;
-        };
-        let bash = std::path::Path::new(&root).join(r"Git\bin\bash.exe");
-        let bash = bash.to_string_lossy().into_owned();
-        if path_exists(&bash).await {
-            return Ok(bash_shell_config(bash));
-        }
-    }
-    let (stdout, status) = run_command("where", &["bash.exe"], Duration::from_millis(5000)).await;
-    let found = (status == Some(0))
-        .then(|| stdout.lines().map(str::trim).find(|line| !line.is_empty()))
-        .flatten();
-    match found {
-        Some(bash) if path_exists(bash).await => Ok(bash_shell_config(bash.to_owned())),
-        Some(_) | None => Err(ExecutionError::new(
+    match eukhe_types::platform::shell::find_windows_bash() {
+        Some(bash) => Ok(bash_shell_config(bash.to_string_lossy().into_owned())),
+        None => Err(ExecutionError::new(
             ExecutionErrorCode::ShellUnavailable,
             "No bash shell found: install Git for Windows (Git Bash) or set a shell path",
         )),

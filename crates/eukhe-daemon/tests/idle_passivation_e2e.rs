@@ -899,6 +899,7 @@ async fn wait_gone(pid: u32, budget: Duration, what: &str) {
 /// not kept running), and resumes by its durable id with its transcript.
 /// A left root with a turn in flight keeps its worker until the turn ends.
 #[cfg(unix)]
+// Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
 #[tokio::test]
 async fn a_root_left_for_another_session_releases_its_worker_once_idle() {
     let dir = tempfile::TempDir::new().expect("temp dir");

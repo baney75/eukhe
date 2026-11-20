@@ -192,6 +192,7 @@ async fn reads_ranges_spanning_several_internal_chunks_exactly() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture is a FIFO, which Windows has no counterpart for.
 #[tokio::test]
 async fn refuses_a_fifo_without_waiting_for_a_writer() {
     let (_dir, cwd) = temp_dir("pi-durable-env-readers-");

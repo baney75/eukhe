@@ -65,3 +65,34 @@ pub struct PeerRules {
     /// Whom a client accepts behind an abstract endpoint.
     pub server: ServerRule,
 }
+
+/// Whether `dir` is inside this user's profile (`%USERPROFILE%`), the
+/// Windows stand-in for the Unix owner and mode check: the profile's
+/// default ACL lets in only this user, SYSTEM and Administrators, so no
+/// other user can plant or replace a file there. Both paths are resolved
+/// first, so a link or junction out of the profile does not count.
+/// `false` when either does not resolve.
+#[cfg(windows)]
+#[must_use]
+pub fn is_in_own_profile(dir: &std::path::Path) -> bool {
+    let Some(profile) = std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    match (std::fs::canonicalize(profile), std::fs::canonicalize(dir)) {
+        (Ok(profile), Ok(dir)) => dir.starts_with(profile),
+        (Err(_), _) | (_, Err(_)) => false,
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::is_in_own_profile;
+
+    #[test]
+    fn the_temp_dir_is_in_the_profile_and_the_windows_dir_is_not() {
+        let temp = tempfile::tempdir().unwrap();
+        assert!(is_in_own_profile(temp.path()));
+        let windows = std::env::var_os("SystemRoot").unwrap();
+        assert!(!is_in_own_profile(std::path::Path::new(&windows)));
+    }
+}

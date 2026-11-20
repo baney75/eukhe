@@ -744,6 +744,7 @@ fn total_cap_marks_the_file_count_as_a_lower_bound() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 /// Excluded directories, symlinks, and eukhe temporary files: the first
 /// two get notices and are counted; temporary files are hidden.
 #[test]
@@ -800,6 +801,7 @@ fn reads_without_permission(path: &Path) -> bool {
 }
 
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 /// An unreadable file and an unreadable directory are counted with a
 /// notice each, and the search goes on.
 #[test]

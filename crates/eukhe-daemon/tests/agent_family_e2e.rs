@@ -404,6 +404,7 @@ async fn send_agent_message(
 /// child id, and by persisted session id, delivers into the real child
 /// worker, and the child's own parent-directed reply delivers back.
 #[cfg(unix)]
+// Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
 #[tokio::test]
 async fn parent_child_agent_message_round_trip_end_to_end() {
     let dir = tempfile::TempDir::new().expect("temp dir");
@@ -684,6 +685,7 @@ fn cell_turn(code: &str) -> Value {
 /// kid-a's own spawned grandchild is kid-a's child and never in the
 /// root's roster, and the other family's rows never enter either roster.
 #[cfg(unix)]
+// Unix only: its fixture is a FIFO, which Windows has no counterpart for.
 #[tokio::test]
 async fn family_edges_never_cross_families_end_to_end() {
     let dir = tempfile::TempDir::new().expect("temp dir");

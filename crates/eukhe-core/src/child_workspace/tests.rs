@@ -378,6 +378,7 @@ async fn a_hand_back_takes_the_childs_changes_and_reports_conflicts() {
 /// of the same file is a conflict kept whole under `conflicts/`, and its
 /// change of another file reaches the parent byte for byte.
 #[cfg(unix)]
+// Unix only: its expected values are Unix paths.
 #[tokio::test]
 async fn a_hand_back_keeps_each_doc_above_its_item_or_reports_the_conflict() {
     let dir = tempfile::tempdir().unwrap();
@@ -1066,6 +1067,7 @@ fn with_host_trust(trusted: &Path) -> String {
 /// in the parent, stays untrusted), its node check runs with it, and the
 /// hand-back ends it.
 #[cfg(unix)]
+// Unix only: its expected trust value is a ':'-separated Unix path list.
 #[tokio::test]
 async fn a_childs_copy_keeps_the_mise_trust_its_parent_has() {
     let dir = tempfile::tempdir().unwrap();
@@ -1125,6 +1127,7 @@ async fn a_childs_copy_keeps_the_mise_trust_its_parent_has() {
 /// A parent that trusts nothing, or no mise to ask, gives the copy no
 /// trust.
 #[cfg(unix)]
+// Unix only: its expected trust value is a ':'-separated Unix path list.
 #[tokio::test]
 async fn a_copy_of_an_untrusted_or_unasked_parent_trusts_nothing() {
     let dir = tempfile::tempdir().unwrap();

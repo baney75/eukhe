@@ -17,6 +17,7 @@ pub mod identity;
 pub mod kill_point;
 pub mod mode;
 pub mod process;
+pub mod shell;
 pub mod terminal;
 pub mod transport;
 

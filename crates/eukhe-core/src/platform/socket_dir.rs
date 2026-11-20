@@ -76,16 +76,16 @@ pub fn prepare_socket_dir(dir: &Path) -> Result<SocketDir> {
 /// Make `dir` ready to hold the files that name pipes, on Windows. A
 /// missing dir (and its missing parents) is created; an existing dir, and
 /// the dir after a create, must be a real directory, not a symbolic link
-/// or junction. Windows has no uid or mode bits to check: the dir takes the
-/// ACL of its parent (under the user's profile, the owner's alone), and a
-/// pipe is reached by its name, not through the dir, so a file another
-/// user put there cannot redirect a client to their pipe unless they can
-/// write the user's profile.
+/// or junction, inside the user's profile. Windows has no uid or mode bits
+/// to check: the profile's ACL admits only the user, SYSTEM and
+/// Administrators, so no other user can put a file there that names their
+/// own pipe (clients refuse an endpoint file outside it too).
 ///
 /// # Errors
 ///
 /// Returns an error that names the dir and what was found when it is not
-/// a real directory, or when it cannot be inspected or created.
+/// a real directory in the profile, or when it cannot be inspected or
+/// created.
 #[cfg(windows)]
 pub fn prepare_socket_dir(dir: &Path) -> Result<SocketDir> {
     let outcome = match std::fs::symlink_metadata(dir) {
@@ -104,15 +104,17 @@ pub fn prepare_socket_dir(dir: &Path) -> Result<SocketDir> {
     let file_type = found.file_type();
     let problem = if file_type.is_symlink() {
         "is a symbolic link or junction"
-    } else if file_type.is_dir() {
+    } else if !file_type.is_dir() {
+        "is not a directory"
+    } else if eukhe_types::platform::access::is_in_own_profile(dir) {
         return Ok(outcome);
     } else {
-        "is not a directory"
+        "is outside your user profile, where another user could plant a file naming their pipe"
     };
     Err(anyhow::anyhow!(
         "the socket dir {} {problem}. eukhe names its pipes only from a real \
-         directory. Remove that path, or pass --daemon-socket with a path in a \
-         private directory.",
+         directory in your user profile. Remove that path, or pass \
+         --daemon-socket with a path under %USERPROFILE%.",
         dir.display()
     ))
 }

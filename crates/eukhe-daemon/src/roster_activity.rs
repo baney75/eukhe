@@ -369,6 +369,7 @@ mod tests {
     /// slow supervisor collapses into a couple of flushes with the latest
     /// state — an unbounded queue would drain every request one by one.
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[tokio::test]
     async fn a_burst_collapses_behind_a_slow_supervisor() {
         let dir = tempfile::TempDir::new().unwrap();

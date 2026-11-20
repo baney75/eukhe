@@ -51,10 +51,8 @@ use process::{wait_socket_file, Daemon};
 // The replaced-file oracles (off Linux): a Linux endpoint is an abstract
 // name, which binds once while its owner listens; no file to replace.
 #[cfg(not(target_os = "linux"))]
-#[cfg(unix)]
 use daemon::supervisor_command;
 #[cfg(not(target_os = "linux"))]
-#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 #[cfg(not(target_os = "linux"))]
 use std::os::unix::net::UnixListener;

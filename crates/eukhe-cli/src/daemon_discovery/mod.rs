@@ -829,6 +829,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     #[test]
     fn discovery_reports_orphan_files_inside_the_given_root_only() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -849,6 +850,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
     /// The default scope finds this release's endpoint in the socket dir
     /// (on Linux an abstract socket: no file) and an earlier release's
     /// daemon still listening on a socket file in the legacy dir.

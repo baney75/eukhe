@@ -607,6 +607,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[test]
     fn update_document_refuses_an_unreadable_or_invalid_document() {
         use std::os::unix::fs::PermissionsExt;

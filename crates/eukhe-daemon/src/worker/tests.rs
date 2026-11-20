@@ -551,6 +551,7 @@ async fn an_input_pause_lease_holds_admissions_until_released() {
 /// reopens the storage: the run resumes to completion, and the journal's
 /// busy verdict goes `create` (busy) -> `run_ended` (idle).
 #[cfg(unix)]
+// Unix only: it works with AF_UNIX socket paths; Windows uses the named pipe.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_crashed_run_resumes_on_the_next_create() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -620,6 +621,7 @@ async fn a_crashed_run_resumes_on_the_next_create() {
 /// failure in its journal, and a revived worker reopens the storage,
 /// resumes the run, and drains the steer queued before the failure.
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_failed_harness_retires_the_worker_and_the_revival_drains_the_steer() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -703,7 +705,6 @@ async fn a_failed_harness_retires_the_worker_and_the_revival_drains_the_steer() 
 /// Make `dir`'s tree unwritable (or writable again).
 #[cfg(unix)]
 fn set_writable(dir: &Path, writable: bool) {
-    #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
     let (dir_mode, file_mode) = if writable {
         (0o755, 0o644)

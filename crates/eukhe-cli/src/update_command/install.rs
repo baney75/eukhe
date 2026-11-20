@@ -280,6 +280,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: its expected values are Unix paths.
     #[test]
     fn an_installer_payload_with_its_launcher_is_an_installer_install() {
         let dir = tempfile::tempdir().unwrap();
@@ -300,6 +301,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: its expected values are Unix paths.
     #[test]
     fn a_payload_without_a_launcher_that_execs_it_is_unknown() {
         let dir = tempfile::tempdir().unwrap();
@@ -313,6 +315,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    // Unix only: it checks Unix mode bits, which Windows files do not have.
     #[test]
     fn a_read_only_root_is_refused() {
         use std::os::unix::fs::PermissionsExt;

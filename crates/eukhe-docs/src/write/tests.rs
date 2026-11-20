@@ -227,6 +227,7 @@ fn creates_with_parents_and_records_every_line_seen() {
 }
 
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 #[test]
 fn overwrite_keeps_bom_crlf_and_mode() {
     let fixture = Fixture::new();
@@ -285,6 +286,7 @@ fn overwrite_of_a_file_not_utf8_warns() {
 }
 
 #[cfg(unix)]
+// Unix only: it checks Unix mode bits, which Windows files do not have.
 /// Regression: a created file that starts with `#!` was made 0o755, so
 /// an agent's write made a program that a later step could run.
 #[test]
@@ -299,6 +301,7 @@ fn created_script_gets_no_execute_bit() {
 }
 
 #[cfg(unix)]
+// Unix only: its fixture makes links with std::os::unix::fs::symlink.
 /// A write through a symlink is checked on the link's target, and a
 /// refused write changes nothing.
 #[test]
