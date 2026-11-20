@@ -8,13 +8,38 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use super::fs::{rename_no_replace, sync_directory};
+#[cfg(windows)]
+use super::lock_dir::LockDir;
+
+/// The lock a move holds: the parent directory's own lock on Unix.
+#[cfg(unix)]
+fn lock_move(parent: &Path, _to: &Path) -> io::Result<fs::File> {
+    let lock = fs::File::open(parent)?;
+    lock.lock()?;
+    Ok(lock)
+}
+
+/// The lock a move holds on Windows, where a directory opens as no
+/// lockable file: an owned lock directory at `<to>.lock`, reclaimed only
+/// from a dead owner, waited for up to two minutes.
+#[cfg(windows)]
+fn lock_move(_parent: &Path, to: &Path) -> io::Result<LockDir> {
+    LockDir::acquire_owned_retrying(
+        to,
+        std::time::Duration::from_secs(10),
+        2_400,
+        std::time::Duration::from_millis(50),
+    )
+}
 
 /// Move the directory `from` to `to`, whose parent exists. On one file
 /// system a rename; across file systems a copy into `<to>.moving`, a mark
 /// `<to>.moved` (the copy is whole), the copy's rename to `to`, then the
 /// removal of `from` and of the mark. Run again after a crash, it ends the
 /// move the crash cut. Nothing to move when nothing is at `from` or a
-/// symlink is. Moves into one parent take turns (a lock on the parent).
+/// symlink is. Moves into one parent take turns (a lock on the parent);
+/// on Windows, where a directory takes no lock, moves to one `to` take
+/// turns (an owned [`LockDir`](super::LockDir) at `<to>.lock`).
 ///
 /// # Errors
 ///
@@ -27,8 +52,7 @@ pub fn move_dir(from: &Path, to: &Path) -> io::Result<()> {
             format!("{} has no parent directory", to.display()),
         )
     })?;
-    let lock = fs::File::open(parent)?;
-    lock.lock()?;
+    let _lock = lock_move(parent, to)?;
     let (staging, mark) = (sibling(to, ".moving"), sibling(to, ".moved"));
     if exists(&mark)? && exists(to)? {
         return finish(from, &mark, parent);
