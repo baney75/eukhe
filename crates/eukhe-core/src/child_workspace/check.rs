@@ -307,7 +307,16 @@ async fn run(
     report: &(dyn Fn(CheckReport) + Sync),
 ) -> (CheckOutcome, String) {
     let trust = super::tool_env(dir);
-    let mut shell = Command::new("sh");
+    let program = match crate::platform::shell::posix_shell_program("sh") {
+        Ok(program) => program,
+        Err(error) => {
+            return (
+                CheckOutcome::Failed { code: None },
+                format!("sh did not start: {error}"),
+            )
+        }
+    };
+    let mut shell = Command::new(program);
     shell
         .arg("-c")
         .arg(format!("exec 2>&1\n{command}"))

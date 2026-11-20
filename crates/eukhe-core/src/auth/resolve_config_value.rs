@@ -68,7 +68,7 @@ fn run_command(command: &str) -> Result<Option<String>> {
 /// `resolve-config-value`: the default shell).
 fn hidden_spawn(command: &str) -> std::io::Result<std::process::Output> {
     use std::process::{Command, Stdio};
-    Command::new("bash")
+    Command::new(crate::platform::shell::posix_shell_program("bash")?)
         .arg("-c")
         .arg(command)
         .stdin(Stdio::null())
