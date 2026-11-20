@@ -586,11 +586,15 @@ mod tests {
     #[test]
     fn process_start_id_reflects_the_platform_ladder() {
         // Linux answers from /proc (`proc:`); macOS/BSD answer
-        // `ps:<lstart>` - the same ladder TS `getProcessStartId` walks.
+        // `ps:<lstart>` - the same ladder TS `getProcessStartId` walks;
+        // Windows answers its creation time (`win:`).
         let start = get_process_start_id(std::process::id());
         assert!(start.is_some());
         let id = start.unwrap();
+        #[cfg(unix)]
         assert!(id.starts_with("proc:") || id.starts_with("ps:"));
+        #[cfg(windows)]
+        assert!(id.starts_with("win:"));
         assert!(get_process_start_id(0).is_none());
     }
 
@@ -757,10 +761,7 @@ mod tests {
         let guard = format!("{}.guard", lease.directory.display());
         std::fs::create_dir(&guard).unwrap();
         let old = std::time::SystemTime::now() - STALE_GUARD_AFTER - Duration::from_secs(1);
-        std::fs::File::open(&guard)
-            .unwrap()
-            .set_modified(old)
-            .unwrap();
+        filetime::set_file_mtime(&guard, filetime::FileTime::from_system_time(old)).unwrap();
         let started = std::time::Instant::now();
         let error = acquire_runtime_session_lease(&path, dir.path()).unwrap_err();
         let elapsed = started.elapsed();
@@ -812,10 +813,7 @@ mod tests {
             .is_some();
         let stale =
             std::time::SystemTime::now() - UNVERIFIED_OWNER_STALE_AFTER - Duration::from_secs(1);
-        fs::File::open(&owner_path)
-            .unwrap()
-            .set_modified(stale)
-            .unwrap();
+        filetime::set_file_mtime(&owner_path, filetime::FileTime::from_system_time(stale)).unwrap();
         let taken = acquire_runtime_session_lease(&path, dir.path()).is_ok();
         assert_eq!((refused_while_fresh, taken), (true, true));
     }
@@ -851,10 +849,7 @@ mod tests {
         let guard = format!("{}.guard", directory.display());
         std::fs::write(&guard, b"stale").unwrap();
         let old = std::time::SystemTime::now() - STALE_GUARD_AFTER - Duration::from_secs(1);
-        std::fs::File::open(&guard)
-            .unwrap()
-            .set_modified(old)
-            .unwrap();
+        filetime::set_file_mtime(&guard, filetime::FileTime::from_system_time(old)).unwrap();
         let started = std::time::Instant::now();
         let error = acquire_runtime_session_lease(&path, dir.path()).unwrap_err();
         let elapsed = started.elapsed();
