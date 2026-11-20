@@ -1333,12 +1333,22 @@ mod tests {
     /// unrelated daemons (other sockets, plain CLIs) never match.
     #[test]
     fn supervisor_argv_shapes() {
+        // An absolute socket path on this platform: a relative token never
+        // matches.
+        #[cfg(unix)]
+        const SOCKET: &str = "/tmp/sock/daemon.sock";
+        #[cfg(windows)]
+        const SOCKET: &str = r"C:\tmp\sock\daemon.sock";
+        #[cfg(unix)]
+        const OTHER_SOCKET: &str = "/tmp/OTHER/daemon.sock";
+        #[cfg(windows)]
+        const OTHER_SOCKET: &str = r"C:\tmp\OTHER\daemon.sock";
         let product = [
             "/usr/local/bin/eukhe",
             "--mode",
             "daemon",
             "--daemon-socket",
-            "/tmp/sock/daemon.sock",
+            SOCKET,
         ]
         .iter()
         .map(ToString::to_string)
@@ -1347,7 +1357,7 @@ mod tests {
             "/usr/bin/eukhe-daemon",
             "supervisor",
             "--socket",
-            "/tmp/sock/daemon.sock",
+            SOCKET,
             "--agent-dir",
             "/agent",
         ]
@@ -1359,7 +1369,7 @@ mod tests {
             "--mode",
             "daemon",
             "--daemon-socket",
-            "/tmp/OTHER/daemon.sock",
+            OTHER_SOCKET,
         ]
         .iter()
         .map(ToString::to_string)
@@ -1368,21 +1378,9 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
-        assert!(supervisor_argv_names_socket(
-            &product,
-            "/tmp/sock/daemon.sock"
-        ));
-        assert!(supervisor_argv_names_socket(
-            &direct,
-            "/tmp/sock/daemon.sock"
-        ));
-        assert!(!supervisor_argv_names_socket(
-            &other_socket,
-            "/tmp/sock/daemon.sock"
-        ));
-        assert!(!supervisor_argv_names_socket(
-            &interactive,
-            "/tmp/sock/daemon.sock"
-        ));
+        assert!(supervisor_argv_names_socket(&product, SOCKET));
+        assert!(supervisor_argv_names_socket(&direct, SOCKET));
+        assert!(!supervisor_argv_names_socket(&other_socket, SOCKET));
+        assert!(!supervisor_argv_names_socket(&interactive, SOCKET));
     }
 }

@@ -339,7 +339,7 @@ mod tests {
         let created = worker
             .dispatch(
                 "create",
-                &json!({ "noSession": true, "cwd": "/tmp", "name": "pauses" }),
+                &json!({ "noSession": true, "cwd": dir.to_string_lossy(), "name": "pauses" }),
             )
             .await;
         assert!(created.success, "create failed: {created:?}");
