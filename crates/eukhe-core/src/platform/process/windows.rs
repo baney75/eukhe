@@ -190,4 +190,38 @@ mod tests {
         wait_for_exit(pid).await.expect("the exit wait");
         assert_eq!((pid_exists(pid), process_group_id(pid)), (false, None));
     }
+
+    /// The bash tool's abort: a group kill of a Git Bash command ends the
+    /// command bash started too, so its stdout pipe closes and the wait
+    /// returns, well before the command's own end.
+    #[test]
+    fn a_group_kill_of_bash_closes_its_pipe() {
+        use std::io::Read as _;
+        let bash = crate::platform::shell::posix_shell_program("bash").expect("Git Bash");
+        let mut command = Command::new(bash);
+        command
+            .args(["-c", "echo started; sleep 30"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped());
+        set_new_process_group(&mut command);
+        let mut child = command.spawn().expect("spawn bash");
+        let mut stdout = child.stdout.take().expect("stdout");
+        let mut started = [0u8; 8];
+        stdout.read_exact(&mut started).expect("bash started");
+        let begun = std::time::Instant::now();
+        let pid = i32::try_from(child.id()).expect("pid");
+        assert!(kill_process_group_or_pid(pid), "the group kill");
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let mut rest = Vec::new();
+            let _ = sender.send(stdout.read_to_end(&mut rest).map(|_| rest));
+        });
+        let ended = receiver.recv_timeout(Duration::from_secs(10));
+        assert!(
+            ended.is_ok(),
+            "the pipe stayed open {:?} after the kill",
+            begun.elapsed()
+        );
+        child.wait().expect("wait");
+    }
 }
