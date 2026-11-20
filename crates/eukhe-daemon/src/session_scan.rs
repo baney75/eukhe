@@ -267,9 +267,19 @@ mod tests {
     #[test]
     fn rows_match_the_sequential_fold_and_order() {
         let dir = temp_dir();
-        write_session(&dir, "/repo/a", Some("alpha"), 3);
-        write_session(&dir, "/repo/b", None, 1);
-        write_session(&dir, "/repo/c", Some("gamma"), 12);
+        let paths = [
+            write_session(&dir, "/repo/a", Some("alpha"), 3),
+            write_session(&dir, "/repo/b", None, 1),
+            write_session(&dir, "/repo/c", Some("gamma"), 12),
+        ];
+        // Distinct mtimes in write order: quick writes can share one tick
+        // (NTFS), and the order under test is by mtime.
+        let start = SystemTime::now();
+        for (step, path) in (0u64..).zip(&paths) {
+            let file = fs::File::options().write(true).open(path).unwrap();
+            file.set_modified(start + std::time::Duration::from_secs(step))
+                .unwrap();
+        }
         let scanned = list_sessions(&dir);
         assert_eq!(scanned, sequential_list_sessions(&dir));
         assert_eq!(scanned.len(), 3);
