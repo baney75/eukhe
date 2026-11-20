@@ -10,6 +10,8 @@ mod line_scan;
 mod native;
 mod native_watch;
 mod node_error;
+#[cfg(any(windows, test))]
+mod win32_path;
 
 use std::collections::BTreeMap;
 use std::error::Error;

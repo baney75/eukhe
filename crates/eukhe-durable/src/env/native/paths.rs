@@ -1,8 +1,16 @@
 //! Node's POSIX `path` functions, `os.homedir()`, `os.tmpdir()`, and
-//! `url.fileURLToPath()`, as `env/node.ts` uses them.
+//! `url.fileURLToPath()`, as `env/node.ts` uses them. Windows takes Node's
+//! `path.win32` rules from `env/win32_path.rs`, as Node itself does there.
 
+#[cfg(unix)]
 use percent_encoding::percent_decode_str;
 
+#[cfg(windows)]
+pub(crate) use super::super::win32_path::{
+    basename, file_url_to_path, is_absolute, join, resolve, tmp_dir,
+};
+
+#[cfg(unix)]
 /// The segments of `path` after removing `.`, empty segments, and resolving
 /// `..`; with `allow_above_root`, leading `..` segments are kept. Node's
 /// `normalizeString`.
@@ -24,6 +32,7 @@ fn normalize_segments(path: &str, allow_above_root: bool) -> String {
     segments.join("/")
 }
 
+#[cfg(unix)]
 /// `process.cwd()`, or `/` when it cannot be read.
 fn process_cwd() -> String {
     std::env::current_dir().map_or_else(
@@ -32,6 +41,7 @@ fn process_cwd() -> String {
     )
 }
 
+#[cfg(unix)]
 /// Node's `path.posix.resolve(...paths)`.
 pub(crate) fn resolve(paths: &[&str]) -> String {
     let mut resolved = String::new();
@@ -61,6 +71,7 @@ pub(crate) fn resolve(paths: &[&str]) -> String {
     }
 }
 
+#[cfg(unix)]
 /// Node's `path.posix.normalize(path)`.
 pub(crate) fn normalize(path: &str) -> String {
     if path.is_empty() {
@@ -85,6 +96,7 @@ pub(crate) fn normalize(path: &str) -> String {
     }
 }
 
+#[cfg(unix)]
 /// Node's `path.posix.join(...paths)`.
 pub(crate) fn join(paths: &[&str]) -> String {
     let joined = paths
@@ -99,11 +111,13 @@ pub(crate) fn join(paths: &[&str]) -> String {
     normalize(&joined)
 }
 
+#[cfg(unix)]
 /// Node's `path.posix.isAbsolute(path)`.
 pub(crate) fn is_absolute(path: &str) -> bool {
     path.starts_with('/')
 }
 
+#[cfg(unix)]
 /// Node's `path.posix.basename(path)`.
 pub(crate) fn basename(path: &str) -> &str {
     let trimmed = path.trim_end_matches('/');
@@ -123,6 +137,7 @@ pub(crate) fn home_dir() -> String {
     )
 }
 
+#[cfg(unix)]
 /// `os.tmpdir()` on POSIX: `$TMPDIR`, `$TMP`, `$TEMP`, or `/tmp`, without a
 /// trailing slash.
 pub(crate) fn tmp_dir() -> String {
@@ -136,6 +151,7 @@ pub(crate) fn tmp_dir() -> String {
     path
 }
 
+#[cfg(unix)]
 /// `url.fileURLToPath(url)` on POSIX, or `None` where Node throws: not a
 /// `file:` URL, a host, an encoded `/`, or percent-escapes that are not UTF-8.
 pub(crate) fn file_url_to_path(input: &str) -> Option<String> {
@@ -162,12 +178,21 @@ pub(crate) fn file_url_to_path(input: &str) -> Option<String> {
         .map(std::borrow::Cow::into_owned)
 }
 
+/// What follows `~/` (Windows: `~/` or `~\\`), when `path` starts so.
+fn home_relative(path: &str) -> Option<&str> {
+    #[cfg(windows)]
+    if let Some(rest) = path.strip_prefix("~\\") {
+        return Some(rest);
+    }
+    path.strip_prefix("~/")
+}
+
 /// `resolvePath` of `env/node.ts`: `~`, `~/…`, and `file://` URLs, then
 /// `path.resolve` against `cwd`.
 pub(crate) fn resolve_path(cwd: &str, path: &str) -> String {
     let normalized = if path == "~" {
         home_dir()
-    } else if let Some(rest) = path.strip_prefix("~/") {
+    } else if let Some(rest) = home_relative(path) {
         join(&[&home_dir(), rest])
     } else if path.starts_with("file://") {
         // Keep malformed URLs as ordinary paths so filesystem methods preserve
@@ -183,7 +208,7 @@ pub(crate) fn resolve_path(cwd: &str, path: &str) -> String {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
