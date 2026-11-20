@@ -373,7 +373,9 @@ jobs:
           set -euo pipefail
           {
             echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)"
-            echo "RUSTFLAGS=--remap-path-prefix=${GITHUB_WORKSPACE}=/eukhe --remap-path-prefix=${CARGO_HOME:-${USERPROFILE}\.cargo}=/cargo"
+            # +crt-static: the C runtime links in, so eukhe.exe starts on a
+            # Windows without the Visual C++ redistributable.
+            echo "RUSTFLAGS=-C target-feature=+crt-static --remap-path-prefix=${GITHUB_WORKSPACE}=/eukhe --remap-path-prefix=${CARGO_HOME:-${USERPROFILE}\.cargo}=/cargo"
           } >> "${GITHUB_ENV}"
       - name: Fetch dependencies (locked, checksummed)
         run: cargo fetch --locked --target "${TARGET}"
@@ -384,6 +386,14 @@ jobs:
           EUKHE_BUILD_COMMIT: ${{ needs.version.outputs.sha }}
           CARGO_PROFILE_DIST_STRIP: debuginfo
         run: cargo build --profile dist --frozen --target "${TARGET}" -j 4 -p eukhe-cli --bin eukhe
+      - name: "Livecheck: eukhe.exe needs no Visual C++ runtime DLL"
+        run: |
+          set -euo pipefail
+          imports="$(llvm-readobj --coff-imports "target/${TARGET}/dist/eukhe.exe" | grep -i '^ *Name: ' || true)"
+          echo "${imports}"
+          if grep -Eiq 'vcruntime|msvcp|ucrtbase|api-ms-win-crt' <<<"${imports}"; then
+            echo "::error::eukhe.exe imports a C runtime DLL"; exit 1
+          fi
       - name: "Livecheck: --version prints the release version"
         run: |
           set -euo pipefail
