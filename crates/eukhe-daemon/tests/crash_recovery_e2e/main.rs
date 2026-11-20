@@ -41,6 +41,8 @@ mod isolated_supervisor;
 mod mock_llm;
 #[path = "../support/process.rs"]
 mod process;
+#[path = "../support/sigkill.rs"]
+mod sigkill_support;
 #[path = "../support/wire_client.rs"]
 mod wire_client;
 
@@ -462,12 +464,7 @@ fn worker_pid(client: &mut WireClient, session_id: &str) -> u32 {
 }
 
 fn sigkill(pid: u32) {
-    let status = Command::new("kill")
-        .arg("-9")
-        .arg(pid.to_string())
-        .status()
-        .expect("run kill");
-    assert!(status.success(), "kill -9 {pid}");
+    sigkill_support::sigkill(pid);
 }
 
 /// Wait until `pid` is gone (reaped or a zombie).

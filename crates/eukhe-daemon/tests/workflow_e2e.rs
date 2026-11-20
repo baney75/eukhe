@@ -25,6 +25,8 @@ use serde_json::{json, Value};
 mod daemon;
 #[path = "support/process.rs"]
 mod process;
+#[path = "support/sigkill.rs"]
+mod sigkill_support;
 use daemon::supervisor_command;
 use process::Daemon;
 
@@ -453,11 +455,7 @@ fn a_run_survives_a_parent_worker_crash_and_reports_once() {
         &json!({ "type": "get_state", "activeSessionId": parent }),
     );
     let pid = state["workerPid"].as_u64().expect("the worker pid");
-    let killed = std::process::Command::new("kill")
-        .args(["-9", &pid.to_string()])
-        .status()
-        .expect("run kill");
-    assert!(killed.success(), "kill -9 {pid}");
+    sigkill_support::sigkill(u32::try_from(pid).expect("a pid"));
 
     // The supervisor relaunches the worker with backoff; the barrier
     // answers once the relaunched worker serves the session.
