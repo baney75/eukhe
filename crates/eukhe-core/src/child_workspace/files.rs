@@ -164,7 +164,7 @@ pub(super) fn replace(from: &Path, to: &Path) -> io::Result<()> {
     match copy_entry(from, &staged)? {
         Copied::Cloned | Copied::Plain => {
             if !fs::symlink_metadata(&staged)?.file_type().is_symlink() {
-                fs::File::open(&staged)?.sync_all()?;
+                crate::platform::fs::sync_file(&staged)?;
             }
             fs::rename(&staged, to)
         }

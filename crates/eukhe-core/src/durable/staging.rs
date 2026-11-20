@@ -155,9 +155,7 @@ pub(crate) async fn publish(
                 if file_type.is_dir() {
                     pending.push(path);
                 } else if file_type.is_file() {
-                    File::open(&path)
-                        .and_then(|file| file.sync_all())
-                        .map_err(step("sync", &path))?;
+                    crate::platform::fs::sync_file(&path).map_err(step("sync", &path))?;
                 }
             }
             sync_directory(&dir).map_err(step("sync", &dir))?;

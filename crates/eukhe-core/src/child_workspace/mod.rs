@@ -422,7 +422,7 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> anyhow::Result<()> {
     file.sync_all()?;
     fs::rename(&staged, path)?;
     if let Some(dir) = path.parent() {
-        fs::File::open(dir)?.sync_all()?;
+        crate::platform::fs::sync_directory(dir)?;
     }
     Ok(())
 }

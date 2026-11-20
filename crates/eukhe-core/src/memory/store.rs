@@ -336,7 +336,7 @@ impl Appender {
             let file = options.open(&path)?;
             if !existed {
                 // The new name must survive a crash too.
-                File::open(&self.dir)?.sync_all()?;
+                crate::platform::fs::sync_directory(&self.dir)?;
             }
             let len = file.metadata()?.len();
             self.open = Some(OpenDay {

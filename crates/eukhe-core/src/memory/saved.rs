@@ -58,14 +58,14 @@ pub(crate) fn save_images(dir: &Path, id: u64, images: &[ImageContent]) -> io::R
     let name = format!("{id}.json");
     if images.is_empty() {
         return match fs::remove_file(images_dir.join(&name)) {
-            Ok(()) => File::open(&images_dir)?.sync_all(),
+            Ok(()) => crate::platform::fs::sync_directory(&images_dir),
             Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
             Err(error) => Err(error),
         };
     }
     if !images_dir.is_dir() {
         fs::create_dir_all(&images_dir)?;
-        File::open(dir)?.sync_all()?;
+        crate::platform::fs::sync_directory(dir)?;
     }
     let bytes = serde_json::to_vec(images).map_err(io::Error::other)?;
     write_atomic(&images_dir, &name, &bytes)
@@ -102,7 +102,7 @@ fn write_atomic(dir: &Path, name: &str, bytes: &[u8]) -> io::Result<()> {
     file.sync_all()?;
     drop(file);
     fs::rename(&temp, dir.join(name))?;
-    File::open(dir)?.sync_all()
+    crate::platform::fs::sync_directory(dir)
 }
 
 #[cfg(test)]

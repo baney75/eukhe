@@ -344,8 +344,7 @@ fn publish_import_copy(source: &Path, destination: &Path) -> anyhow::Result<()> 
     let published = std::fs::copy(source, &temp)
         .with_context(|| format!("copy {} to {}", source.display(), temp.display()))
         .and_then(|_| {
-            std::fs::File::open(&temp)
-                .and_then(|file| file.sync_all())
+            eukhe_core::platform::fs::sync_file(&temp)
                 .with_context(|| format!("sync {}", temp.display()))
         })
         .and_then(|()| match std::fs::hard_link(&temp, destination) {

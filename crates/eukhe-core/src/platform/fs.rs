@@ -52,6 +52,32 @@ pub fn fsync(file: &File) -> io::Result<()> {
     file.sync_data()
 }
 
+/// Commit one file's content, opened by path: POSIX fsyncs a read-only
+/// descriptor.
+///
+/// # Errors
+///
+/// Returns the OS error of the open or the sync.
+#[cfg(unix)]
+pub fn sync_file(path: &Path) -> io::Result<()> {
+    File::open(path)?.sync_all()
+}
+
+/// Commit one file's content, opened by path: `FlushFileBuffers` needs a
+/// handle with write access, so the file opens for writing (appending
+/// nothing).
+///
+/// # Errors
+///
+/// Returns the OS error of the open or the sync.
+#[cfg(windows)]
+pub fn sync_file(path: &Path) -> io::Result<()> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)?
+        .sync_all()
+}
+
 /// Make `link` a symbolic link to `target`.
 ///
 /// # Errors
