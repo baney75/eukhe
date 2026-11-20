@@ -92,7 +92,7 @@ struct InstrumentedEnv {
 }
 
 fn basename(path: &str) -> &str {
-    path.rsplit('/').next().unwrap_or(path)
+    path.rsplit(std::path::is_separator).next().unwrap_or(path)
 }
 
 fn injected(message: &str, path: &str) -> FileError {
