@@ -96,3 +96,25 @@ async fn a_listed_entry_removed_before_its_lstat_is_left_out() {
     let listed: Vec<&str> = infos.iter().map(|info| info.name.as_str()).collect();
     assert_eq!(listed, ["doc-4.jsonl"]);
 }
+
+/// A `no_follow` open refuses a final-component link through the handle
+/// it opened (ELOOP's Windows code), and a following open reads its target.
+#[cfg(windows)]
+#[test]
+fn a_no_follow_open_refuses_a_link_through_its_handle() {
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target");
+    std::fs::write(&target, b"outside").unwrap();
+    let link = dir.path().join("link");
+    std::os::windows::fs::symlink_file(&target, &link).unwrap();
+    let link = link.to_str().unwrap();
+    let refused = super::open_for_read(link, true).unwrap_err();
+    assert_eq!(
+        refused.raw_os_error(),
+        Some(crate::env::node_error::ERROR_CANT_RESOLVE_FILENAME)
+    );
+    let mut read = String::new();
+    std::io::Read::read_to_string(&mut super::open_for_read(link, false).unwrap(), &mut read)
+        .unwrap();
+    assert_eq!(read, "outside");
+}

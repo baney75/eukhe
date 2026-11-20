@@ -173,6 +173,31 @@ pub fn termination_signal(_status: &std::process::ExitStatus) -> Option<i32> {
 mod tests {
     use super::*;
 
+    /// Ending the job ends a grandchild that holds the root's stdout: the
+    /// pipe closes at once, where a kill of the root alone would leave it
+    /// open until the grandchild exits.
+    #[tokio::test]
+    async fn ending_the_job_ends_what_the_root_started() {
+        use tokio::io::AsyncReadExt as _;
+        let mut command = tokio::process::Command::new("cmd");
+        command
+            .args(["/d", "/c", "ping -n 60 127.0.0.1"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped());
+        let mut child = ProcessJob::spawn(command).expect("spawn cmd");
+        let mut stdout = child.take_stdout().expect("stdout pipe");
+        // The first reply line: the grandchild runs and holds the pipe.
+        let mut first = [0u8; 1];
+        stdout.read_exact(&mut first).await.expect("ping output");
+        child.end();
+        let mut rest = Vec::new();
+        tokio::time::timeout(Duration::from_secs(10), stdout.read_to_end(&mut rest))
+            .await
+            .expect("the pipe closes once the job ends")
+            .expect("read the pipe");
+        child.wait().await.expect("the root's wait resolves");
+    }
+
     #[tokio::test]
     async fn a_killed_group_is_gone_and_its_exit_wait_resolves() {
         let mut command = Command::new("cmd");
@@ -226,43 +251,80 @@ mod tests {
     }
 }
 
-/// A child's process tree, held in a Job Object that ends every process in
-/// it when the job closes: the child is assigned right after its spawn, and
-/// whatever it starts joins the job too. Ending it ([`ProcessJob::end`], or
-/// a drop) kills the tree even when its root is already gone, which a
-/// `taskkill /T` of the root cannot reach.
+/// A spawned child and its process tree, held in a Job Object. The child
+/// starts suspended and joins the job before its first instruction, so
+/// every process it starts is in the job too. Ending it
+/// ([`ProcessJob::end`], or a drop) kills the whole tree even when its root
+/// is already gone, which a `taskkill /T` of the root cannot reach.
 #[derive(Debug)]
-pub struct ProcessJob(Option<win32job::Job>);
+pub struct ProcessJob(Option<Box<dyn process_wrap::tokio::ChildWrapper>>);
 
 impl ProcessJob {
-    /// Put `child` in a new kill-on-close job. A child the job cannot take
-    /// (already gone, or a job error) gets an empty guard: the caller's
-    /// own kill still runs.
-    #[must_use]
-    pub fn contain(child: &tokio::process::Child) -> Self {
-        let job = child.raw_handle().and_then(|handle| {
-            let mut limits = win32job::ExtendedLimitInfo::new();
-            limits.limit_kill_on_job_close();
-            let job = win32job::Job::create_with_limit_info(&limits).ok()?;
-            // The handle is the child's own, borrowed for the call.
-            job.assign_process(handle as isize).ok()?;
-            Some(job)
-        });
-        Self(job)
+    /// Spawn `command` in a new job and in its own process group, as
+    /// [`set_new_process_group`] does (the job sets the creation flags).
+    ///
+    /// # Errors
+    ///
+    /// The spawn's error, or the job's: a child the job cannot take is
+    /// killed before this returns.
+    pub fn spawn(command: tokio::process::Command) -> std::io::Result<Self> {
+        use process_wrap::tokio::{CommandWrap, CreationFlags, JobObject};
+        use windows::Win32::System::Threading::PROCESS_CREATION_FLAGS;
+        let mut wrap = CommandWrap::from(command);
+        wrap.wrap(CreationFlags(PROCESS_CREATION_FLAGS(
+            CREATE_NEW_PROCESS_GROUP,
+        )))
+        .wrap(JobObject);
+        wrap.spawn().map(|child| Self(Some(child)))
     }
 
-    /// End every process in the job now.
+    /// The root's pid, while it runs.
+    #[must_use]
+    pub fn id(&self) -> Option<u32> {
+        self.0.as_ref().and_then(|child| child.id())
+    }
+
+    /// The root's stdout pipe, once.
+    pub fn take_stdout(&mut self) -> Option<tokio::process::ChildStdout> {
+        self.0.as_mut().and_then(|child| child.stdout().take())
+    }
+
+    /// The root's stderr pipe, once.
+    pub fn take_stderr(&mut self) -> Option<tokio::process::ChildStderr> {
+        self.0.as_mut().and_then(|child| child.stderr().take())
+    }
+
+    /// Wait for the root to exit, as a Unix wait on the group leader does:
+    /// the rest of the tree may still run.
+    ///
+    /// # Errors
+    ///
+    /// The wait's error, or `NotFound` after [`ProcessJob::release`].
+    pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        match self.0.as_mut() {
+            Some(child) => child.inner_mut().wait().await,
+            None => Err(std::io::ErrorKind::NotFound.into()),
+        }
+    }
+
+    /// End every process in the job now. The root still needs its
+    /// [`ProcessJob::wait`].
     pub fn end(&mut self) {
-        self.0.take();
+        if let Some(child) = self.0.as_mut() {
+            // A job already empty has nothing left to end.
+            let _ = child.start_kill();
+        }
     }
 
     /// Let the tree outlive the guard, as a process group outlives its
-    /// leader's wait on Unix: the job stops killing on close first.
+    /// leader's wait on Unix: the job closes without a kill.
     pub fn release(mut self) {
-        if let Some(job) = self.0.take() {
-            // A job whose limit stays set still closes: the tree then ends,
-            // the safe side of a failed release.
-            let _ = job.set_extended_limit_info(&win32job::ExtendedLimitInfo::new());
-        }
+        self.0.take();
+    }
+}
+
+impl Drop for ProcessJob {
+    fn drop(&mut self) {
+        self.end();
     }
 }

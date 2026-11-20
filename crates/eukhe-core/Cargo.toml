@@ -71,11 +71,13 @@ nix = { version = "0.29", features = ["signal", "process", "user", "fs", "dir", 
 # crossterm. MIT OR Apache-2.0.
 [target.'cfg(windows)'.dependencies]
 stdio-override = "0.2"
-# platform/process (Windows): a child's whole tree in a kill-on-close Job
-# Object, so an abort or a drop ends every process it started (a safe
-# API over the windows crate, already in the graph through sysinfo).
-# MIT OR Apache-2.0.
-win32job = "2.1"
+# platform/process (Windows): a child's whole tree in a Job Object. The
+# child starts suspended and joins the job before it runs, so nothing it
+# starts escapes; safe API over the windows crate. MIT OR Apache-2.0.
+process-wrap = { version = "10.0.1", default-features = false, features = ["tokio1", "job-object", "creation-flags"] }
+# The creation flags type process-wrap takes; already in the graph through
+# sysinfo. MIT OR Apache-2.0.
+windows = { version = "0.62", default-features = false, features = ["Win32_System_Threading"] }
 
 # platform/process: pidfd_open/pidfd_send_signal, which nix does not
 # wrap; child_workspace: FICLONE extent clones. Already in the graph

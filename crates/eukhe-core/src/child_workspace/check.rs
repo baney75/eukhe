@@ -327,7 +327,9 @@ async fn run(
         .kill_on_drop(true)
         .envs(trust);
     crate::platform::set_new_process_group(shell.as_std_mut());
-    let spawned = shell.spawn();
+    // Windows: in a job, so a drop of this future (the session closed) or
+    // the timeout ends the tree the Git Bash launcher started.
+    let spawned = crate::platform::process::ProcessJob::spawn(shell);
     let mut child = match spawned {
         Ok(child) => child,
         Err(error) => {
@@ -337,7 +339,7 @@ async fn run(
             )
         }
     };
-    let Some(stdout) = child.stdout.take() else {
+    let Some(stdout) = child.take_stdout() else {
         return (
             CheckOutcome::Failed { code: None },
             "sh has no output pipe".to_owned(),
@@ -353,9 +355,6 @@ async fn run(
         });
     };
     running(&[]);
-    // Windows: a drop of this future (the session closed) ends the tree
-    // the Git Bash launcher started, not the launcher alone.
-    let mut tree = crate::platform::process::ProcessJob::contain(&child);
     let mut tail = Vec::new();
     let ended = tokio::time::timeout(config.timeout, async {
         keep_tail(stdout, &mut tail, config.progress_every, running).await?;
@@ -375,13 +374,13 @@ async fn run(
             if let Some(group) = child.id().and_then(|pid| i32::try_from(pid).ok()) {
                 let _gone = signal_process_group(group, Signal::Kill);
             }
-            tree.end();
+            child.end();
             // Reaped so no zombie stays; the kill already ended it.
             let _reaped = child.wait().await;
             CheckOutcome::TimedOut
         }
     };
-    tree.release();
+    child.release();
     let start = tail.len().saturating_sub(OUTPUT_TAIL_BYTES);
     (
         outcome,

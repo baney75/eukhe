@@ -1,5 +1,5 @@
 //! The leaf open of a snapshot capture on Windows. std has no `openat`
-//! there, so the walk pins each ancestor instead: every ancestor directory
+//! there, so the walk pins each ancestor instead: the root and every ancestor directory
 //! is opened without following a reparse point and without
 //! `FILE_SHARE_DELETE`, so while the capture holds it no one can rename it,
 //! delete it or swap a link in at its name. Each held handle is checked to
@@ -37,9 +37,20 @@ pub(super) fn open_leaf(
     let Some((leaf, ancestors)) = components.split_last() else {
         return Ok(OpenLeaf::Missing);
     };
+    // Held until the leaf is read: each pins its directory's name. The
+    // root is pinned too, and like Unix's O_NOFOLLOW open of it, a link
+    // there fails the capture.
+    let mut pinned = Vec::with_capacity(ancestors.len() + 1);
+    let held_root = open_no_follow(root, FILE_SHARE_READ | FILE_SHARE_WRITE)?;
+    let meta = held_root.metadata()?;
+    if meta.file_type().is_symlink() || !meta.is_dir() {
+        return Err(std::io::Error::other(format!(
+            "the snapshot root {} is not a real directory",
+            root.display()
+        )));
+    }
+    pinned.push(held_root);
     let mut dir = root.to_path_buf();
-    // Held until the leaf is read: each pins its directory's name.
-    let mut pinned = Vec::with_capacity(ancestors.len());
     for component in ancestors {
         dir.push(component);
         let handle = match open_no_follow(&dir, FILE_SHARE_READ | FILE_SHARE_WRITE) {
@@ -156,5 +167,24 @@ mod tests {
             open_leaf(&root, "a/secret", 1024, false).unwrap(),
             OpenLeaf::AncestorSymlink
         ));
+    }
+
+    /// A root that is a junction fails the capture: a root-level leaf has
+    /// no ancestor to pin, so the root itself is checked.
+    #[test]
+    fn a_junction_root_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = dir.path().join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(outside.join("secret"), b"outside").unwrap();
+        let root = dir.path().join("root");
+        let status = std::process::Command::new("cmd")
+            .args(["/d", "/c", "mklink", "/J"])
+            .arg(&root)
+            .arg(&outside)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(open_leaf(&root, "secret", 1024, false).is_err());
     }
 }

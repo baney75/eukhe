@@ -30,18 +30,46 @@ pub use windows::{
     ProcessJob,
 };
 
-/// A child's process tree: on Unix its process group already holds it
-/// (the caller's group kill ends it), so the guard holds nothing.
+/// A spawned child: on Unix its process group already holds its tree
+/// (the caller's group kill ends it), so this is the child alone.
 #[cfg(unix)]
 #[derive(Debug)]
-pub struct ProcessJob;
+pub struct ProcessJob(tokio::process::Child);
 
 #[cfg(unix)]
 impl ProcessJob {
-    /// Nothing to hold on Unix.
+    /// Spawn `command`; the caller set its process group.
+    ///
+    /// # Errors
+    ///
+    /// The spawn's error.
+    pub fn spawn(mut command: tokio::process::Command) -> std::io::Result<Self> {
+        command.spawn().map(Self)
+    }
+
+    /// The child's pid, while it runs.
     #[must_use]
-    pub fn contain(_child: &tokio::process::Child) -> Self {
-        Self
+    pub fn id(&self) -> Option<u32> {
+        self.0.id()
+    }
+
+    /// The child's stdout pipe, once.
+    pub fn take_stdout(&mut self) -> Option<tokio::process::ChildStdout> {
+        self.0.stdout.take()
+    }
+
+    /// The child's stderr pipe, once.
+    pub fn take_stderr(&mut self) -> Option<tokio::process::ChildStderr> {
+        self.0.stderr.take()
+    }
+
+    /// Wait for the child to exit.
+    ///
+    /// # Errors
+    ///
+    /// The wait's error.
+    pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.0.wait().await
     }
 
     /// Nothing to end on Unix: the group kill did.

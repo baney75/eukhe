@@ -275,25 +275,31 @@ fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
         .open(target)
 }
 
-/// Opens `target` to read. `no_follow` refuses a final-component symlink
-/// with ELOOP's Windows code (`ERROR_CANT_RESOLVE_FILENAME`), from an
-/// `lstat` just before the open: a link swapped in between them is
-/// followed. Backup semantics open a directory too, as libuv's open does,
-/// so the caller's type check reports it (EISDIR) instead of the access
-/// error a plain open of a directory gets.
+/// Opens `target` to read. `no_follow` opens a final-component link as
+/// itself and refuses it through that handle with ELOOP's Windows code
+/// (`ERROR_CANT_RESOLVE_FILENAME`), so a link swapped in before the open
+/// is never followed. Backup semantics open a directory too, as libuv's
+/// open does, so the caller's type check reports it (EISDIR) instead of the
+/// access error a plain open of a directory gets.
 #[cfg(windows)]
 fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
     use std::os::windows::fs::OpenOptionsExt as _;
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
-    if no_follow && std::fs::symlink_metadata(target)?.file_type().is_symlink() {
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    let mut flags = FILE_FLAG_BACKUP_SEMANTICS;
+    if no_follow {
+        flags |= FILE_FLAG_OPEN_REPARSE_POINT;
+    }
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(flags)
+        .open(target)?;
+    if no_follow && file.metadata()?.file_type().is_symlink() {
         return Err(io::Error::from_raw_os_error(
             super::node_error::ERROR_CANT_RESOLVE_FILENAME,
         ));
     }
-    std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
-        .open(target)
+    Ok(file)
 }
 
 /// `mkdir(path, { recursive, mode })`: every directory it creates gets
