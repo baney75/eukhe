@@ -755,7 +755,7 @@ async fn rename_routes_self_and_child_renames_through_the_supervisor() {
     );
 }
 
-/// The files under `dir` (relative path → content).
+/// The files under `dir` (relative `/`-joined path → content).
 fn files_under(dir: &Path) -> BTreeMap<String, String> {
     let mut files = BTreeMap::new();
     let mut pending = vec![dir.to_path_buf()];
@@ -768,8 +768,10 @@ fn files_under(dir: &Path) -> BTreeMap<String, String> {
                 let relative = path
                     .strip_prefix(dir)
                     .unwrap()
-                    .to_string_lossy()
-                    .into_owned();
+                    .components()
+                    .map(|part| part.as_os_str().to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
                 files.insert(relative, std::fs::read_to_string(&path).unwrap());
             }
         }
