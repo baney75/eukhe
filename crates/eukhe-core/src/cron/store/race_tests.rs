@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use super::{
     input, AgentCronJobStore, DispatchOutcome, DispatchResultOptions, RlmHeartbeatUpdate,
@@ -279,8 +279,9 @@ fn a_claimed_occurrence_never_runs_twice() {
 /// Age a lock directory past every staleness threshold, as a holder
 /// suspended past it (or a clock jump) leaves it.
 fn age_lock(lock: &Path) {
-    std::fs::File::open(lock)
-        .and_then(|opened| opened.set_modified(UNIX_EPOCH + Duration::from_secs(1)))
+    // A directory's mtime: Windows opens a directory only with backup
+    // semantics and a write right, which the lock's own helper uses.
+    crate::platform::lock_dir::set_mtime(lock, 1, 0)
         .expect("the held lock directory exists and can be aged");
 }
 
