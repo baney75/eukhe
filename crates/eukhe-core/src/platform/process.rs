@@ -38,12 +38,13 @@ pub struct ProcessJob(tokio::process::Child);
 
 #[cfg(unix)]
 impl ProcessJob {
-    /// Spawn `command`; the caller set its process group.
+    /// Spawn `command` in its own process group ([`set_new_process_group`]).
     ///
     /// # Errors
     ///
     /// The spawn's error.
     pub fn spawn(mut command: tokio::process::Command) -> std::io::Result<Self> {
+        set_new_process_group(command.as_std_mut());
         command.spawn().map(Self)
     }
 

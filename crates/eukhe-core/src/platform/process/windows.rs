@@ -251,47 +251,49 @@ mod tests {
     }
 }
 
-/// A spawned child and its process tree, held in a Job Object. The child
-/// starts suspended and joins the job before its first instruction, so
-/// every process it starts is in the job too. Ending it
-/// ([`ProcessJob::end`], or a drop) kills the whole tree even when its root
-/// is already gone, which a `taskkill /T` of the root cannot reach.
+/// A spawned child and its process tree, held in a kill-on-close Job
+/// Object. The child starts suspended and joins the job before its first
+/// instruction, so every process it starts is in the job too. Ending it
+/// ([`ProcessJob::end`]), a drop, or this process's own death kills the
+/// whole tree even when its root is already gone, which a `taskkill /T` of
+/// the root cannot reach.
 #[derive(Debug)]
-pub struct ProcessJob(Option<Box<dyn process_wrap::tokio::ChildWrapper>>);
+pub struct ProcessJob(Box<dyn process_wrap::tokio::ChildWrapper>);
 
 impl ProcessJob {
     /// Spawn `command` in a new job and in its own process group, as
-    /// [`set_new_process_group`] does (the job sets the creation flags).
+    /// [`set_new_process_group`] does; the job owns the creation flags.
     ///
     /// # Errors
     ///
     /// The spawn's error, or the job's: a child the job cannot take is
-    /// killed before this returns.
+    /// killed before this returns (process-wrap ends it).
     pub fn spawn(command: tokio::process::Command) -> std::io::Result<Self> {
-        use process_wrap::tokio::{CommandWrap, CreationFlags, JobObject};
+        use process_wrap::tokio::{CommandWrap, CreationFlags, JobObject, KillOnDrop};
         use windows::Win32::System::Threading::PROCESS_CREATION_FLAGS;
         let mut wrap = CommandWrap::from(command);
         wrap.wrap(CreationFlags(PROCESS_CREATION_FLAGS(
             CREATE_NEW_PROCESS_GROUP,
         )))
-        .wrap(JobObject);
-        wrap.spawn().map(|child| Self(Some(child)))
+        .wrap(JobObject)
+        .wrap(KillOnDrop);
+        wrap.spawn().map(Self)
     }
 
     /// The root's pid, while it runs.
     #[must_use]
     pub fn id(&self) -> Option<u32> {
-        self.0.as_ref().and_then(|child| child.id())
+        self.0.id()
     }
 
     /// The root's stdout pipe, once.
     pub fn take_stdout(&mut self) -> Option<tokio::process::ChildStdout> {
-        self.0.as_mut().and_then(|child| child.stdout().take())
+        self.0.stdout().take()
     }
 
     /// The root's stderr pipe, once.
     pub fn take_stderr(&mut self) -> Option<tokio::process::ChildStderr> {
-        self.0.as_mut().and_then(|child| child.stderr().take())
+        self.0.stderr().take()
     }
 
     /// Wait for the root to exit, as a Unix wait on the group leader does:
@@ -299,32 +301,20 @@ impl ProcessJob {
     ///
     /// # Errors
     ///
-    /// The wait's error, or `NotFound` after [`ProcessJob::release`].
+    /// The wait's error.
     pub async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
-        match self.0.as_mut() {
-            Some(child) => child.inner_mut().wait().await,
-            None => Err(std::io::ErrorKind::NotFound.into()),
-        }
+        self.0.inner_mut().wait().await
     }
 
     /// End every process in the job now. The root still needs its
     /// [`ProcessJob::wait`].
     pub fn end(&mut self) {
-        if let Some(child) = self.0.as_mut() {
-            // A job already empty has nothing left to end.
-            let _ = child.start_kill();
-        }
+        // A job already empty has nothing left to end.
+        let _ = self.0.start_kill();
     }
 
-    /// Let the tree outlive the guard, as a process group outlives its
-    /// leader's wait on Unix: the job closes without a kill.
-    pub fn release(mut self) {
-        self.0.take();
-    }
-}
-
-impl Drop for ProcessJob {
-    fn drop(&mut self) {
-        self.end();
-    }
+    /// Done with the child: the job closes, and whatever the tree left
+    /// running ends with it (unlike a Unix process group, which outlives
+    /// its leader's wait).
+    pub fn release(self) {}
 }

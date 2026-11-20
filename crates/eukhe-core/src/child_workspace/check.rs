@@ -326,9 +326,9 @@ async fn run(
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .envs(trust);
-    crate::platform::set_new_process_group(shell.as_std_mut());
-    // Windows: in a job, so a drop of this future (the session closed) or
-    // the timeout ends the tree the Git Bash launcher started.
+    // Its own process group; on Windows a job too, so a drop of this
+    // future (the session closed) or the timeout ends the tree the Git
+    // Bash launcher started.
     let spawned = crate::platform::process::ProcessJob::spawn(shell);
     let mut child = match spawned {
         Ok(child) => child,

@@ -278,14 +278,17 @@ fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
 /// Opens `target` to read. `no_follow` opens a final-component link as
 /// itself and refuses it through that handle with ELOOP's Windows code
 /// (`ERROR_CANT_RESOLVE_FILENAME`), so a link swapped in before the open
-/// is never followed. Backup semantics open a directory too, as libuv's
+/// is never followed. A reparse point that is not a link (a cloud-files
+/// placeholder, a deduplicated file) is opened again normally, so its
+/// filter driver serves the content. Backup semantics open a directory too, as libuv's
 /// open does, so the caller's type check reports it (EISDIR) instead of the
 /// access error a plain open of a directory gets.
 #[cfg(windows)]
 fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
-    use std::os::windows::fs::OpenOptionsExt as _;
+    use std::os::windows::fs::{MetadataExt as _, OpenOptionsExt as _};
     const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
     const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
     let mut flags = FILE_FLAG_BACKUP_SEMANTICS;
     if no_follow {
         flags |= FILE_FLAG_OPEN_REPARSE_POINT;
@@ -294,12 +297,22 @@ fn open_for_read(target: &str, no_follow: bool) -> io::Result<std::fs::File> {
         .read(true)
         .custom_flags(flags)
         .open(target)?;
-    if no_follow && file.metadata()?.file_type().is_symlink() {
+    if !no_follow {
+        return Ok(file);
+    }
+    let meta = file.metadata()?;
+    if meta.file_type().is_symlink() {
         return Err(io::Error::from_raw_os_error(
             super::node_error::ERROR_CANT_RESOLVE_FILENAME,
         ));
     }
-    Ok(file)
+    if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        return Ok(file);
+    }
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(target)
 }
 
 /// `mkdir(path, { recursive, mode })`: every directory it creates gets

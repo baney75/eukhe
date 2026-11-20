@@ -185,6 +185,10 @@ mod tests {
             .status()
             .unwrap();
         assert!(status.success());
-        assert!(open_leaf(&root, "secret", 1024, false).is_err());
+        let error = open_leaf(&root, "secret", 1024, false).unwrap_err();
+        assert!(
+            error.to_string().contains("is not a real directory"),
+            "{error}"
+        );
     }
 }

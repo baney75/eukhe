@@ -723,9 +723,8 @@ async fn run_bash(run: RunBash<'_>) -> BashEnd {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        // Its own process group, so a kill reaches every process it starts.
-        eukhe_core::platform::process::set_new_process_group(process.as_std_mut());
-        // Windows: the tree in a job, so an abort reaches what the Git
+        // Its own process group, so a kill reaches every process it
+        // starts; on Windows a job too, so an abort reaches what the Git
         // Bash launcher started even if the launcher is gone.
         let mut child = match eukhe_core::platform::process::ProcessJob::spawn(process) {
             Ok(child) => child,

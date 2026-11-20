@@ -106,7 +106,13 @@ fn a_no_follow_open_refuses_a_link_through_its_handle() {
     let target = dir.path().join("target");
     std::fs::write(&target, b"outside").unwrap();
     let link = dir.path().join("link");
-    std::os::windows::fs::symlink_file(&target, &link).unwrap();
+    // A file link needs SeCreateSymbolicLinkPrivilege (Developer Mode or
+    // an elevated shell); without it there is nothing to test.
+    match std::os::windows::fs::symlink_file(&target, &link) {
+        Ok(()) => {}
+        Err(error) if error.raw_os_error() == Some(1314) => return,
+        Err(error) => panic!("make the link: {error}"),
+    }
     let link = link.to_str().unwrap();
     let refused = super::open_for_read(link, true).unwrap_err();
     assert_eq!(
