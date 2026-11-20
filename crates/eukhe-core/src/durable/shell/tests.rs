@@ -5,6 +5,9 @@
 //! compiled core's (`bend/approvals.bend` `default_auto`). A crash
 //! mid-script never runs it again (`effect_once`).
 
+// Helpers used only by the tests gated to Unix below.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
+
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -86,6 +89,7 @@ async fn transcript_of(script: &str, truncation: Truncation) -> (String, Option<
 /// Regression: the output goes through the call's truncation. Under the
 /// cap the projection keeps its head and tail and the diagnostic counts
 /// every dropped byte; under the opt-out every byte is kept.
+#[cfg(unix)] // Expects yes to die of SIGPIPE (exit 141); Windows has no SIGPIPE.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_output_obeys_the_calls_truncation_and_its_opt_out() {
     let script = "yes | head -n 30000";
@@ -239,6 +243,7 @@ async fn a_script_past_the_budget_detaches_and_its_end_settles_the_job() {
 /// Regression: the model edits while its check runs on as a job. The
 /// job's settled output names the paths written after the detach, so the
 /// check's result is not read as judging the tree as it stands.
+#[cfg(unix)] // A FIFO (mkfifo) holds the job open.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_job_names_the_paths_written_while_it_ran() {
     let fixture = Fixture::new();

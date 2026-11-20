@@ -14,6 +14,8 @@
 //! Test A runs a live kernel (the eukhe-runtime `bash`) on this checkout's
 //! runtime. Test B is the scripted engine (no kernel).
 
+// Helpers used only by the tests gated to Unix below.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 // Pedantic-gate dispositions (fleet-uniform ruling; see this lane's PR for
 // the full rationale).
 // Stack-resident futures by design on the daemon's hot paths; boxing the
@@ -323,6 +325,7 @@ fn create_session(client: &mut Client, id: &str, dir: &Path, agent_dir: &Path) -
     (active_id, session_id)
 }
 
+#[cfg(unix)] // Its watcher is a python cell on the RLM kernel, which is Unix-only.
 #[test]
 fn a_detached_bash_completion_wakes_the_idle_session_across_a_supervisor_restart() {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
