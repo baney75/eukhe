@@ -2,6 +2,9 @@
 //! live observers, abort, crash recovery with a revived namespace, and host
 //! requests routed with the call context. These run a real Python kernel
 //! built from this checkout's runtime.
+// The kernel tests are Unix-only; on Windows the support the other test
+// modules share from here is all that compiles.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 
 use std::future::Future;
 use std::path::PathBuf;
@@ -295,6 +298,7 @@ pub(crate) async fn wait_for_live_output(live: &LiveOutput, output: &str) {
     .await;
 }
 
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn streams_cell_output_into_the_live_tool_slot_and_answers_with_the_python_result() {
     let _kernel = kernel_test_lock().await;
@@ -335,6 +339,7 @@ async fn streams_cell_output_into_the_live_tool_slot_and_answers_with_the_python
 /// A call that boots the kernel shows its startup stages, then moves its
 /// details to `running` once the kernel is up, so live clients (which show a
 /// `starting` call's stage note instead of its output) show the cell output.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_call_that_showed_startup_stages_publishes_running_before_its_output() {
     let _kernel = kernel_test_lock().await;
@@ -376,6 +381,7 @@ async fn a_call_that_showed_startup_stages_publishes_running_before_its_output()
 /// The end of a long cell output reaches the model (G2): the result keeps
 /// the head and the tail within the default bound, one `output_bounded`
 /// diagnostic names the omitted middle, and the artifact holds everything.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn long_cell_output_keeps_its_end_and_spills_the_whole_to_an_artifact() {
     let _kernel = kernel_test_lock().await;
@@ -415,6 +421,7 @@ async fn long_cell_output_keeps_its_end_and_spills_the_whole_to_an_artifact() {
 
 /// A result value past the runtime's frame size reaches the artifact whole:
 /// nothing clips it before the one bound.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_huge_result_value_reaches_the_artifact_whole() {
     let _kernel = kernel_test_lock().await;
@@ -441,6 +448,7 @@ async fn a_huge_result_value_reaches_the_artifact_whole() {
     session.close(cx()).await.expect("close");
 }
 
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn abort_interrupts_the_running_cell_and_the_kernel_stays_usable() {
     let _kernel = kernel_test_lock().await;
@@ -484,6 +492,7 @@ async fn abort_interrupts_the_running_cell_and_the_kernel_stays_usable() {
     session.close(cx()).await.expect("close");
 }
 
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_crash_mid_cell_answers_interrupted_and_the_reopened_kernel_revives_its_namespace() {
     let _kernel = kernel_test_lock().await;
@@ -586,6 +595,7 @@ async fn a_crash_mid_cell_answers_interrupted_and_the_reopened_kernel_revives_it
 /// `n`, and whether the requesting cell's source rode along.
 type SeenCall = (Option<String>, Option<ConversationId>, Value, bool);
 
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn host_requests_reach_their_handlers_with_the_running_tool_call() {
     let _kernel = kernel_test_lock().await;
@@ -630,6 +640,7 @@ async fn host_requests_reach_their_handlers_with_the_running_tool_call() {
     session.close(cx()).await.expect("close");
 }
 
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn boundary_requests_schedule_and_the_requested_refinement_runs_after_the_tool_round() {
     let _kernel = kernel_test_lock().await;
@@ -717,6 +728,7 @@ async fn boundary_requests_schedule_and_the_requested_refinement_runs_after_the_
 
 /// The out-of-band kernel lanes never boot a kernel: a conversation whose
 /// kernel never started answers the definitive "Kernel is not running".
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn kernel_activity_answers_not_running_without_a_booted_kernel() {
     let fixture = Fixture::new();
@@ -751,6 +763,7 @@ async fn kernel_activity_answers_not_running_without_a_booted_kernel() {
 /// After a cell booted the conversation's kernel, the bash lane reaches its
 /// handle registry (the catalog lists the background handle; an unknown
 /// handle is the kernel's own refusal).
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn kernel_bash_activity_reaches_the_booted_kernel() {
     let _kernel = kernel_test_lock().await;
@@ -802,6 +815,7 @@ async fn kernel_bash_activity_reaches_the_booted_kernel() {
 /// A factory `run` is preflighted before the kernel is asked: a spec whose
 /// declared model resolves nowhere fails loudly even with no kernel booted;
 /// a spec the host cannot read passes through to the kernel lane.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn kernel_factory_run_is_preflighted_before_the_kernel() {
     use crate::refinement::{
@@ -901,6 +915,7 @@ fn process_alive(pid: i32) -> bool {
 /// that asks for it boots its kernel at open with no `python` call, so a
 /// compaction with no tool use still lands the hidden `ipython_state`
 /// notice (the `kernel_prewarm` contract on the durable pool).
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_prewarmed_root_boots_at_open_and_its_compaction_lands_the_state_notice() {
     let _kernel = kernel_test_lock().await;
@@ -973,6 +988,7 @@ async fn a_prewarmed_root_boots_at_open_and_its_compaction_lands_the_state_notic
 /// the session opens (a firing prewarm creates the conversation's kernel
 /// before `open_session` returns), so an empty pool right after open is
 /// conclusive.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn subagents_and_unflagged_roots_stay_lazy() {
     let fixture = Fixture::new();
@@ -999,6 +1015,7 @@ async fn subagents_and_unflagged_roots_stay_lazy() {
 
 /// Closing a session takes its prewarmed kernel process down (the old
 /// engine's `kernel_teardown` prewarm contract on the durable pool).
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn closing_a_session_kills_its_prewarmed_kernel_process() {
     let _kernel = kernel_test_lock().await;
@@ -1081,6 +1098,7 @@ async fn job_request(session: &EukheSession, request: &str, data: Value) -> Valu
 /// blocking budget no longer holds the turn (ADR 0010). Its call settles
 /// `detached` with the output so far and a job reference, the turn goes
 /// on, and the cell's end settles the job with its whole output.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_cell_past_the_blocking_budget_detaches_and_its_end_settles_the_job() {
     let _kernel = kernel_test_lock().await;
@@ -1136,6 +1154,7 @@ async fn a_cell_past_the_blocking_budget_detaches_and_its_end_settles_the_job() 
 /// message, which follows its result. Before, the job read delivered and
 /// no input read queued yet, so the wait answered "Nothing to wait for"
 /// (`jobs_wait_e2e` under load, where the wake's admission task ran late).
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_notice_on_its_way_into_the_conversation_ends_a_wait_as_a_message() {
     let _kernel = kernel_test_lock().await;
@@ -1197,6 +1216,7 @@ async fn a_notice_on_its_way_into_the_conversation_ends_a_wait_as_a_message() {
 /// result: the session's job-settled notice is not sent as well. Before,
 /// the wait was clamped to the blocking budget and every result also
 /// reached the session as a notice.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_waited_job_is_delivered_by_the_wait_alone() {
     let _kernel = kernel_test_lock().await;
@@ -1264,6 +1284,7 @@ async fn a_waited_job_is_delivered_by_the_wait_alone() {
 /// `jobs.cancel` stops the job through the kernel's abort, its reply
 /// carries the end (the agent's own stop sends no notice), and the kernel
 /// serves the next cell.
+#[cfg(unix)] // Boots a real RLM kernel, which runs on Unix only.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_call_on_a_kernel_held_by_a_job_reports_it_busy_and_a_cancel_stops_the_job() {
     let _kernel = kernel_test_lock().await;
