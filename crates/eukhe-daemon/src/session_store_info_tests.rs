@@ -250,6 +250,7 @@ fn streaming_fold_matches_legacy_across_large_file_and_appends() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+#[cfg(unix)] // Spots a replaced file by inode and ctime; Windows std metadata has neither.
 #[test]
 fn cache_rejects_replacement_and_same_length_in_place_rewrite() {
     let dir = test_dir();
@@ -481,6 +482,7 @@ fn a_failed_prefix_check_rescans_from_byte_zero() {
 /// attribution (the resumed fold must find the prefix id in the persisted
 /// per-id map). A replacement file (a new inode) rejects the stale sidecar
 /// and rescans whole.
+#[cfg(unix)] // Spots a replaced file by inode and ctime; Windows std metadata has neither.
 #[test]
 fn a_persisted_scan_state_resumes_like_the_full_fold() {
     let dir = test_dir();
