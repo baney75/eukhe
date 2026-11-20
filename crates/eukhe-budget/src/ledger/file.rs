@@ -243,6 +243,17 @@ impl Locked {
         self.last.as_ref().map(|record| &record.state)
     }
 
+    /// The whole file, read through the locked handle: on Windows the
+    /// lock is mandatory, so a second handle could not read it.
+    pub(super) fn read_all(&self) -> Result<String, LedgerError> {
+        let mut file = &self.file;
+        let mut text = String::new();
+        file.seek(SeekFrom::Start(0))
+            .and_then(|_| file.read_to_string(&mut text))
+            .map_err(|source| self.io(source))?;
+        Ok(text)
+    }
+
     /// The budget as `agent` sees it at `now`, in the account of `owner`.
     pub(super) fn report(&self, owner: &str, agent: &str, now: u64) -> BudgetReport {
         let empty = State::default();

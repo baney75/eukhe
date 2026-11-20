@@ -1193,10 +1193,7 @@ impl Ledger {
     /// does not read, and the file's failures.
     pub fn audit(&self) -> Result<Audit, LedgerError> {
         let (owner, locked) = self.lock()?;
-        let text = std::fs::read_to_string(&owner.path).map_err(|source| LedgerError::Io {
-            path: owner.path.clone(),
-            source,
-        })?;
+        let text = locked.read_all()?;
         drop(locked);
         replay(&owner.path, &text)
     }
