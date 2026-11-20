@@ -88,8 +88,9 @@ mod tests {
     fn a_time_before_the_epoch_reads_as_whole_seconds_down_and_nanoseconds_up() {
         let before = UNIX_EPOCH - std::time::Duration::new(1, 250_000_000);
         assert_eq!(since_epoch(Some(before)), (-2, 750_000_000));
-        let after = UNIX_EPOCH + std::time::Duration::new(3, 5);
-        assert_eq!(since_epoch(Some(after)), (3, 5));
+        // 500 ns: Windows keeps time in 100 ns steps, Unix in 1 ns.
+        let after = UNIX_EPOCH + std::time::Duration::new(3, 500);
+        assert_eq!(since_epoch(Some(after)), (3, 500));
         assert_eq!(since_epoch(None), (0, 0));
     }
 
