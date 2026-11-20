@@ -44,6 +44,9 @@ use process::Daemon;
 mod attach;
 mod compaction;
 mod create;
+// Unix only: SOCKET_SLACK assumes AF_UNIX buffer sizes; on a Windows named
+// pipe the second client's wait_for_idle got no answer in 20 s (open item).
+#[cfg(unix)]
 mod event_order;
 mod lifecycle;
 mod read_goldens;
