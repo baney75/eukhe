@@ -108,24 +108,28 @@ mod tests {
             ]
         );
         assert!(shown.iter().all(|word| !word.chars().any(hidden)));
-        // bash reads each shown word back as the word.
-        let script = shown
-            .iter()
-            .map(|word| format!("printf '%s\\0' {word}"))
-            .collect::<Vec<_>>()
-            .join("; ");
-        let out = std::process::Command::new("bash")
-            .args(["-c", &script])
-            .env("LC_ALL", "C.UTF-8")
-            .output()
-            .unwrap();
-        let read: Vec<String> = out
-            .stdout
-            .split(|&byte| byte == 0)
-            .filter(|part| !part.is_empty())
-            .map(|part| String::from_utf8(part.to_vec()).unwrap())
-            .collect();
-        assert_eq!(read, words);
+        // bash reads each shown word back as the word. Unix only: the
+        // `bash` a Windows host finds first is the WSL launcher.
+        #[cfg(unix)]
+        {
+            let script = shown
+                .iter()
+                .map(|word| format!("printf '%s\\0' {word}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            let out = std::process::Command::new("bash")
+                .args(["-c", &script])
+                .env("LC_ALL", "C.UTF-8")
+                .output()
+                .unwrap();
+            let read: Vec<String> = out
+                .stdout
+                .split(|&byte| byte == 0)
+                .filter(|part| !part.is_empty())
+                .map(|part| String::from_utf8(part.to_vec()).unwrap())
+                .collect();
+            assert_eq!(read, words);
+        }
     }
 
     #[test]
