@@ -637,7 +637,8 @@ mod tests {
         let path = dir.path().join("agent").join("settings.json");
         let content = fs::read_to_string(&path).unwrap();
         assert!(content.contains("local-inference"));
-        // Owner-only mode.
+        // Owner-only mode (Unix mode bits; Windows has none).
+        #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
     }
 
@@ -666,6 +667,8 @@ mod tests {
         );
 
         assert_eq!(fs::read_to_string(&path).unwrap(), "durable bytes\n");
+        // Unix mode bits; Windows has none.
+        #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
         // The temp never leaks: only the destination remains.
         let names: Vec<String> = fs::read_dir(path.parent().unwrap())
