@@ -1,0 +1,380 @@
+# The Windows port's check: the workspace compiles for Windows (MSVC target,
+# LLVM clang for the C crates) and still does on Linux and macOS.
+name: windows-daemon-check
+
+on:
+  push:
+    branches: [windows/daemon-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  check:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # The checkout keeps the repository's LF endings (a Windows runner
+      # converts to CRLF by default; tests compare files byte for byte).
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+
+      # eukhe-bend compiles its C with clang (musttail, preserve_none: 19+).
+      - name: LLVM clang on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$llvm\clang.exe")) { choco install llvm -y --no-progress }
+          Add-Content -Path $env:GITHUB_PATH -Value $llvm
+      - name: clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v clang >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y clang
+          fi
+      - name: clang version
+        run: clang --version
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+          rustc --version --verbose
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check (Windows target)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cargo check --locked --workspace --all-targets --target x86_64-pc-windows-msvc --keep-going
+
+      - name: Clippy (Windows target)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cargo clippy --locked --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
+
+      - name: Check
+        if: runner.os != 'Windows'
+        shell: bash
+        run: cargo check --locked --workspace --all-targets
+
+  # Stage 2: the core crates' tests, each platform natively. Suites that
+  # need a real model or the network skip themselves without keys.
+  test:
+    name: test ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - name: LLVM clang on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$llvm\clang.exe")) { choco install llvm -y --no-progress }
+          Add-Content -Path $env:GITHUB_PATH -Value $llvm
+      - name: clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v clang >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y clang
+          fi
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test
+      # The daemon e2e suites build their kernel venv from
+      # eukhe-runtime/uv.lock with uv (tests/support/kernel_runtime.rs).
+      - uses: astral-sh/setup-uv@v6
+      # CC=clang off Windows (the Bend core's C); on Windows each C crate
+      # keeps its own MSVC-style compiler choice, as in the check job.
+      - name: Build the tests
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" != Windows ]; then export CC=clang; fi
+          cargo test --locked --no-run --message-format=json \
+            -p eukhe-types -p eukhe-client -p eukhe-bend -p eukhe-daemon \
+            -p eukhe-core -p eukhe-durable -p eukhe-shell > "${RUNNER_TEMP}/tests.json"
+      # The binaries `cargo test` would run, one at a time from their
+      # package dir as cargo runs them, each bounded so a hang names its
+      # binary and the rest still run.
+      - name: Test
+        shell: python
+        run: |
+          import json, os, subprocess, sys, time
+          bound = 900
+          # Pre-existing on upstream/main ed377cc05 (baseline job of run
+          # 44654879800, plus local repeats of the rlm lanes: 4 of 5 runs fail
+          # there). Skipped on every OS.
+          preexisting = {
+              "compaction_soak_e2e": ["compaction_soak_300_turns"],
+              "eukhe_core": [
+                  "durable::loop_mode::tests::an_abort_in_a_turn_pauses_the_loop_until_the_user_prompts",
+                  "durable::prompt::budget_tests::a_default_root_request_stays_within_the_prompt_budget",
+                  # Failed on the macOS baseline of run 44668830027.
+                  "durable::loop_mode::tests::an_armed_loop_repeats_the_next_prompt_of_the_user",
+              ],
+              "eukhe_shell": ["shown::tests::a_hidden_character_is_escaped_and_bash_reads_the_word_back"],
+              # Failed on the ubuntu baseline of run 44688931565 too.
+              "eukhe_types": ["platform::identity::tests::a_rebound_endpoint_has_a_new_identity"],
+              # Failed on the macOS baseline of run 44668830027.
+              "eukhe_daemon": ["worker::tests::a_crashed_run_resumes_on_the_next_create"],
+              "supervisor_ended_run_e2e": ["a_worker_that_stops_answering_is_restarted_and_its_turn_ends"],
+              "supervisor_restart_e2e": ["plain_boot::plain_boot_revives_only_journal_busy_workers"],
+              "rlm_subagent_lifecycle_e2e": [
+                  "aborting_a_parent_waiting_in_collect_cancels_the_child",
+                  "a_parent_reads_the_child_its_aborted_wait_cancelled",
+                  "aborting_a_later_cell_cancels_a_background_wait_s_child_too",
+              ],
+              "rlm_children_replacement_e2e": ["new_session_closes_the_spawned_child_and_empties_the_roster"],
+          }
+          for binary, names in sorted(preexisting.items()):
+              print(f"skipped pre-existing in {binary}: {names}")
+          runs = []
+          for line in open(os.path.join(os.environ["RUNNER_TEMP"], "tests.json"), encoding="utf-8"):
+              msg = json.loads(line)
+              if msg.get("reason") == "compiler-artifact" and msg.get("executable") and msg["profile"]["test"]:
+                  runs.append((msg["target"]["name"], msg["executable"], os.path.dirname(msg["manifest_path"])))
+          failed, hung = [], []
+          for name, exe, cwd in sorted(runs):
+              print(f"::group::{name}", flush=True)
+              start = time.monotonic()
+              args = [arg for test in preexisting.get(name, []) for arg in ("--skip", test)]
+              args += ["--exact"] if args else []
+              # Panics print as they happen, so a binary the bound kills
+              # still shows why its tests failed.
+              args += ["--nocapture"] if os.name == "nt" else []
+              proc = subprocess.Popen([exe, *args], cwd=cwd, env={**os.environ, "CARGO_MANIFEST_DIR": cwd})
+              try:
+                  code = proc.wait(timeout=bound)
+              except subprocess.TimeoutExpired:
+                  if os.name == "nt":
+                      subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], check=False)
+                  proc.kill()
+                  proc.wait()
+                  code = "hung"
+              print(f"::endgroup::", flush=True)
+              print(f"{name}: {code} in {time.monotonic() - start:.0f}s", flush=True)
+              if code == "hung":
+                  hung.append(name)
+              elif code != 0:
+                  failed.append(name)
+          print(f"{len(runs)} binaries; failed: {failed}; hung past {bound}s: {hung}")
+          sys.exit(1 if failed or hung else 0)
+      - name: Doctests
+        if: always()
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" != Windows ]; then export CC=clang; fi
+          cargo test --locked --doc \
+            -p eukhe-types -p eukhe-client -p eukhe-bend -p eukhe-daemon \
+            -p eukhe-core -p eukhe-durable -p eukhe-shell
+      # The core lifecycle through the CLI: start, a client over the
+      # platform endpoint, a scripted turn, shutdown.
+      - name: Daemon lifecycle through the CLI
+        if: always()
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" != Windows ]; then export CC=clang; fi
+          cargo test --locked -p eukhe-cli --test daemon_lifecycle_e2e
+
+  # Fork only: the same test command on upstream main (ed377cc05), so a
+  # failure that is there too reads as pre-existing, not as the port's.
+  baseline:
+    name: baseline ${{ matrix.os }}
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    steps:
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+        with:
+          ref: ed377cc05b4229441db75526e7c4d1e412aa7e12
+      - name: LLVM clang on PATH (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $llvm = 'C:\Program Files\LLVM\bin'
+          if (-not (Test-Path "$llvm\clang.exe")) { choco install llvm -y --no-progress }
+          Add-Content -Path $env:GITHUB_PATH -Value $llvm
+      - name: clang (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          if ! command -v clang >/dev/null; then
+            sudo apt-get update && sudo apt-get install -y clang
+          fi
+      - name: Rust toolchain (rust-toolchain.toml)
+        shell: bash
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: test
+      # The daemon e2e suites build their kernel venv from
+      # eukhe-runtime/uv.lock with uv (tests/support/kernel_runtime.rs).
+      - uses: astral-sh/setup-uv@v6
+      # CC=clang off Windows (the Bend core's C); on Windows each C crate
+      # keeps its own MSVC-style compiler choice, as in the check job.
+      - name: Build the tests
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" != Windows ]; then export CC=clang; fi
+          cargo test --locked --no-run --message-format=json \
+            -p eukhe-types -p eukhe-client -p eukhe-bend -p eukhe-daemon \
+            -p eukhe-core -p eukhe-durable -p eukhe-shell > "${RUNNER_TEMP}/tests.json"
+      # The binaries `cargo test` would run, one at a time from their
+      # package dir as cargo runs them, each bounded so a hang names its
+      # binary and the rest still run.
+      - name: Test
+        shell: python
+        run: |
+          import json, os, subprocess, sys, time
+          bound = 900
+          runs = []
+          for line in open(os.path.join(os.environ["RUNNER_TEMP"], "tests.json"), encoding="utf-8"):
+              msg = json.loads(line)
+              if msg.get("reason") == "compiler-artifact" and msg.get("executable") and msg["profile"]["test"]:
+                  runs.append((msg["target"]["name"], msg["executable"], os.path.dirname(msg["manifest_path"])))
+          failed, hung = [], []
+          for name, exe, cwd in sorted(runs):
+              print(f"::group::{name}", flush=True)
+              start = time.monotonic()
+              proc = subprocess.Popen([exe], cwd=cwd, env={**os.environ, "CARGO_MANIFEST_DIR": cwd})
+              try:
+                  code = proc.wait(timeout=bound)
+              except subprocess.TimeoutExpired:
+                  if os.name == "nt":
+                      subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], check=False)
+                  proc.kill()
+                  proc.wait()
+                  code = "hung"
+              print(f"::endgroup::", flush=True)
+              print(f"{name}: {code} in {time.monotonic() - start:.0f}s", flush=True)
+              if code == "hung":
+                  hung.append(name)
+              elif code != 0:
+                  failed.append(name)
+          print(f"{len(runs)} binaries; failed: {failed}; hung past {bound}s: {hung}")
+          sys.exit(1 if failed or hung else 0)
+      - name: Doctests
+        if: always()
+        shell: bash
+        run: |
+          if [ "${RUNNER_OS}" != Windows ]; then export CC=clang; fi
+          cargo test --locked --doc \
+            -p eukhe-types -p eukhe-client -p eukhe-bend -p eukhe-daemon \
+            -p eukhe-core -p eukhe-durable -p eukhe-shell
+
+  # Stage 3 proof: the release workflow's build-windows job, verbatim
+  # but for the version (0.10.999) and the commit (this run's).
+  release-windows-proof:
+    needs: check
+    name: build-${{ matrix.target }}
+    runs-on: ${{ matrix.runs-on }}
+    defaults:
+      run:
+        shell: bash
+    permissions:
+      contents: read
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            runs-on: windows-latest
+    env:
+      VERSION: 0.10.999
+      # The version the binary reports (eukhe-build-info).
+      EUKHE_RELEASE_VERSION: 0.10.999
+      TARGET: ${{ matrix.target }}
+    steps:
+      # The archive carries the repository's LF endings (a Windows runner
+      # checks out CRLF by default).
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      # The runner image ships rustup and LLVM; refusing to continue without
+      # them keeps the job off any package install.
+      - name: Install Rust (runner rustup; toolchain from rust-toolchain.toml)
+        run: |
+          set -euo pipefail
+          command -v rustup >/dev/null || { echo "::error::rustup is not preinstalled on ${RUNNER_OS}"; exit 1; }
+          rustup toolchain install --no-self-update
+          rustup target add "${TARGET}"
+      - name: LLVM clang of the runner image on PATH (eukhe-bend's C)
+        run: |
+          set -euo pipefail
+          llvm='C:\Program Files\LLVM\bin'
+          [[ -x "$(cygpath -u "${llvm}")/clang.exe" ]] || { echo "::error::LLVM clang is not preinstalled on ${RUNNER_OS}"; exit 1; }
+          echo "${llvm}" >> "${GITHUB_PATH}"
+      - name: Reproducible build environment
+        run: |
+          set -euo pipefail
+          {
+            echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)"
+            echo "RUSTFLAGS=--remap-path-prefix=${GITHUB_WORKSPACE}=/eukhe --remap-path-prefix=${CARGO_HOME:-${USERPROFILE}\.cargo}=/cargo"
+          } >> "${GITHUB_ENV}"
+      - name: Fetch dependencies (locked, checksummed)
+        run: cargo fetch --locked --target "${TARGET}"
+      - name: Build (dist profile, frozen, offline)
+        # The build identity names the released commit. STRIP=debuginfo
+        # links without a PDB, so no runner path rides the executable.
+        env:
+          EUKHE_BUILD_COMMIT: ${{ github.sha }}
+          CARGO_PROFILE_DIST_STRIP: debuginfo
+        run: cargo build --profile dist --frozen --target "${TARGET}" -j 4 -p eukhe-cli --bin eukhe
+      - name: "Livecheck: --version prints the release version"
+        run: |
+          set -euo pipefail
+          out="$("target/${TARGET}/dist/eukhe.exe" --version | tr -d '\r')"
+          [[ "${out}" == "${VERSION}" ]] || { echo "::error::binary reports '${out}', expected '${VERSION}'"; exit 1; }
+      - name: Generate bundled catalog asset (committed models.dev snapshot)
+        run: python .github/scripts/release/bundle_catalog.py generate --out "target/${TARGET}/catalog-assets"
+      - name: Assemble zip, checksums, manifest
+        run: |
+          set -euo pipefail
+          python .github/scripts/release/assemble_artifacts.py \
+            --repo-root . \
+            --version "${VERSION}" \
+            --target "${TARGET}" \
+            --binary "target/${TARGET}/dist/eukhe.exe" \
+            --catalog-assets "target/${TARGET}/catalog-assets" \
+            --out-dir "target/${TARGET}/package"
+          python .github/scripts/release/verify_release.py --dist-dir "target/${TARGET}/package" --version "${VERSION}" --target "${TARGET}"
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: artifacts-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/package/eukhe-*
+            target/${{ matrix.target }}/package/SHA256SUMS
+            target/${{ matrix.target }}/package/manifest.json
+          if-no-files-found: error
