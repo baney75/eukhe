@@ -5,9 +5,19 @@
 use std::cmp::Ordering;
 
 /// The separator of the POSIX paths the watcher works on (TS `sep`).
+#[cfg(unix)]
 pub(super) const SEP: &str = "/";
 
+/// The separator of the Windows paths the watcher works on (TS `sep`).
+#[cfg(windows)]
+pub(super) const SEP: &str = "\\";
+
+/// Node's `path.win32.dirname`.
+#[cfg(windows)]
+pub(super) use super::super::win32_path::dirname;
+
 /// Node's `path.posix.dirname`.
+#[cfg(unix)]
 pub(super) fn dirname(path: &str) -> &str {
     if path.is_empty() {
         return ".";
@@ -93,7 +103,7 @@ pub(super) fn compare_utf16(left: &str, right: &str) -> Ordering {
     left.encode_utf16().cmp(right.encode_utf16())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 
