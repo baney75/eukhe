@@ -44,3 +44,47 @@ pub use shared::{
 };
 pub use state_snapshot::{manifest_path_in, snapshot_path_in, RestoreResult, SnapshotResult};
 pub use transport::KernelTransport;
+
+/// The refusal of a kernel start on a platform the RLM kernel runtime does
+/// not run on. The Python runtime (`eukhe-runtime/src/rlm`) drives its
+/// cells through POSIX facilities (`fcntl`, `termios`, process groups and
+/// thread signals), so Windows has no kernel yet. A caller can downcast a
+/// start error to this type to tell the platform refusal from a failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("the RLM kernel is not supported on {platform}: its runtime needs POSIX process control")]
+pub struct KernelUnsupportedPlatform {
+    /// The platform name, as `std::env::consts::OS` reports it.
+    pub platform: &'static str,
+}
+
+impl KernelUnsupportedPlatform {
+    /// The refusal on this platform: `Some` on Windows, `None` where the
+    /// runtime runs.
+    #[must_use]
+    pub fn here() -> Option<Self> {
+        cfg!(windows).then_some(Self {
+            platform: std::env::consts::OS,
+        })
+    }
+}
+
+#[cfg(test)]
+mod platform_tests {
+    use super::KernelUnsupportedPlatform;
+
+    /// The kernel refuses on Windows alone, with an error that names it.
+    #[test]
+    fn the_kernel_refuses_only_where_its_runtime_does_not_run() {
+        let refusal = KernelUnsupportedPlatform::here();
+        assert_eq!(refusal.is_some(), cfg!(windows));
+        let named = KernelUnsupportedPlatform {
+            platform: "windows",
+        };
+        let error = anyhow::Error::from(named);
+        assert_eq!(
+            error.downcast_ref::<KernelUnsupportedPlatform>(),
+            Some(&named)
+        );
+        assert!(error.to_string().contains("not supported on windows"));
+    }
+}
