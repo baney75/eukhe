@@ -343,6 +343,7 @@ mod tests {
         assert!(used.is_none());
     }
 
+    #[cfg(unix)] // Unix path literals; Windows joins SKILL.md with a backslash.
     #[test]
     fn prompt_formatting_lists_one_line_per_visible_skill_under_its_directory() {
         let skill = |name: &str, dir: &str, disable: bool| Skill {
