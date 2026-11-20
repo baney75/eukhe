@@ -19,8 +19,13 @@ async fn fails_rather_than_silently_losing_a_requested_spill() {
         .tempdir()
         .expect("temp dir");
     let root = dir.path().to_str().expect("utf-8 temp dir").to_owned();
-    // Edition 2021; this binary runs no other test.
+    // Edition 2021; this binary runs no other test. `os.tmpdir()` reads
+    // TMPDIR on Unix and TEMP (then TMP) on Windows.
     std::env::set_var("TMPDIR", format!("{root}/missing"));
+    #[cfg(windows)]
+    for name in ["TEMP", "TMP"] {
+        std::env::set_var(name, format!("{root}\\missing"));
+    }
     let env = NativeExecutionEnv::new(NativeExecutionEnvOptions {
         cwd: root,
         ..NativeExecutionEnvOptions::default()
