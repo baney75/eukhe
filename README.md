@@ -47,7 +47,7 @@ Eukhe follows your project's `AGENTS.md`. Type `/` in a session for the slash co
 - No sandbox: model-written code runs with the user's permissions and can change check inputs and the session's files.
 - A model request cut by a crash is not sent again (unless its provider declares lasting deduplication; no shipped provider does): it is reported interrupted, its reserved spend stays counted until its usage is known, and the run continues with a new request.
 - A limit left unset is unlimited.
-- No Windows.
+- The RLM kernel (the `python` tool and its `rlm` subagents) runs on Linux and macOS only: on Windows a kernel start is refused.
 - A passing check can be gamed, for example by a hard-coded answer or an edited test. Eukhe refuses the agent's changes to the check list and fails a check whose `--protect` file changed.
 ```
 
