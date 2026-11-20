@@ -961,6 +961,17 @@ mod tests {
 
     const SESSION: &str = "bash-session";
 
+    /// `path` as a bash word: Git Bash on Windows reads a backslash as an escape, so
+    /// there the path takes `/`.
+    fn sh_path(path: &std::path::Path) -> String {
+        let shown = path.display().to_string();
+        if cfg!(windows) {
+            shown.replace('\\', "/")
+        } else {
+            shown
+        }
+    }
+
     async fn bash_rows(worker: &Worker) -> Vec<Value> {
         worker_rows(worker, "eukhe.bash").await
     }
@@ -1117,7 +1128,7 @@ mod tests {
     async fn an_awaited_bash_run_reports_running_to_the_connection_state() {
         let (dir, worker) = created_worker(SESSION, json!(["ack"])).await;
         let gate = dir.path().join("gate");
-        let command = format!("while [ ! -f {} ]; do sleep 0.01; done", gate.display());
+        let command = format!("while [ ! -f {} ]; do sleep 0.01; done", sh_path(&gate));
         let runner = Arc::clone(&worker);
         let run = tokio::spawn(async move {
             runner
@@ -1151,7 +1162,7 @@ mod tests {
         let gate = dir.path().join("gate");
         let command = format!(
             "echo started; while [ ! -f {} ]; do sleep 0.01; done; echo done",
-            gate.display()
+            sh_path(&gate)
         );
         let response = worker
             .dispatch(
@@ -1265,7 +1276,7 @@ mod tests {
         let closed = dir.path().join("closed");
         let command = format!(
             "touch {}; exec >/dev/null 2>&1; sleep 1e6",
-            closed.display()
+            sh_path(&closed)
         );
         let response = worker
             .dispatch(

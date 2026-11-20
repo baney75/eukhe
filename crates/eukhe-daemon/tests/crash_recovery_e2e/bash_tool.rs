@@ -12,7 +12,7 @@ pub(crate) const TAG: &str = "[slow-bash]";
 /// The call's script: `sh` records its pid, then becomes the `sleep`.
 pub(crate) fn script(release: &Path) -> String {
     let pids = release.with_file_name("bash-pids");
-    format!("sh -c 'echo $$ >> {}; exec sleep 600'", pids.display())
+    format!("sh -c 'echo $$ >> {}; exec sleep 600'", sh_path(&pids))
 }
 
 #[test]

@@ -41,7 +41,7 @@ fn job_killed_at(point: &str) -> Outcome {
     client.send(&json!({
         "type": "execute_bash",
         "activeSessionId": session_id,
-        "command": format!("echo run >> {}", runs.display()),
+        "command": format!("echo run >> {}", sh_path(&runs)),
     }));
     let deadline = Instant::now() + WAIT;
     while !marker.exists() {

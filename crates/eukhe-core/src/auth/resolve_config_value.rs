@@ -81,6 +81,17 @@ fn hidden_spawn(command: &str) -> std::io::Result<std::process::Output> {
 mod tests {
     use super::*;
 
+    /// `path` as a bash word: Git Bash on Windows reads a backslash as an escape, so
+    /// there the path takes `/`.
+    fn sh_path(path: &std::path::Path) -> String {
+        let shown = path.display().to_string();
+        if cfg!(windows) {
+            shown.replace('\\', "/")
+        } else {
+            shown
+        }
+    }
+
     #[test]
     fn env_or_literal_semantics() {
         // Literal when the variable is unset.
@@ -104,7 +115,7 @@ mod tests {
         // counter proves each lookup re-ran the command.
         let counter = std::env::temp_dir().join(format!("pa-resolve-retry-{}", std::process::id()));
         let _ = std::fs::remove_file(&counter);
-        let command = format!("echo x >> {} ; exit 1", counter.display());
+        let command = format!("echo x >> {} ; exit 1", sh_path(&counter));
         for _ in 0..3 {
             assert_eq!(resolve_config_value(&format!("!{command}")), None);
         }
