@@ -80,8 +80,6 @@ fn every_loader_file_is_guarded_and_a_project_file_is_inside() {
     );
     // The fixture world lives in the OS temp dir, a workspace root: a path
     // beside the workspace inside it is Inside; one outside both roots is Outside.
-    #[cfg(unix)]
-    // Not yet passing on Windows (a path beside the workspace in the temp dir judges Outside); open, see the Windows limits.
     assert_eq!(
         [
             eukhe_shell::paths::judge_path(&policy, &top.join("elsewhere.txt")).class,

@@ -44,8 +44,6 @@ use process::Daemon;
 mod attach;
 mod compaction;
 mod create;
-#[cfg(unix)]
-// Open on Windows: the probe gets no wait_for_idle answer while the slow client is not reading; see the Windows limits.
 mod event_order;
 mod lifecycle;
 mod read_goldens;

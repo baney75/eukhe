@@ -760,8 +760,6 @@ async fn head_tree_pins_to_the_status_reported_commit() {
     );
 }
 
-#[cfg(unix)]
-// Not yet passing on Windows (a skip-worktree file hashes unlike its HEAD blob); open, see the Windows limits.
 #[tokio::test]
 async fn head_tree_baseline_excludes_only_absent_skip_worktree_paths() {
     let repo = tempfile::tempdir().unwrap();
