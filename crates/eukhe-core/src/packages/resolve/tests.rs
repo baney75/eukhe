@@ -346,12 +346,15 @@ fn agents_skills_ignores_root_markdown_files() {
     assert!(result.skills.iter().any(|r| r.path == nested && r.enabled));
 }
 
+/// The variable the platform reads the home directory from.
+const HOME_VAR: &str = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+
 #[test]
 fn home_agents_skills_stays_user_scoped_when_cwd_is_under_home() {
     let _guard = ENV_MUTEX.lock().unwrap();
-    let previous_home = std::env::var("HOME").ok();
+    let previous_home = std::env::var(HOME_VAR).ok();
     let fixture = Fixture::new();
-    std::env::set_var("HOME", &fixture.temp_dir);
+    std::env::set_var(HOME_VAR, &fixture.temp_dir);
 
     let home_skill = skill_md(
         &fixture.temp_dir.join(".agents").join("skills"),
@@ -378,8 +381,8 @@ fn home_agents_skills_stays_user_scoped_when_cwd_is_under_home() {
     assert_eq!(matching[0].metadata.source, MetadataSource::Auto);
 
     match previous_home {
-        Some(home) => std::env::set_var("HOME", home),
-        None => std::env::remove_var("HOME"),
+        Some(home) => std::env::set_var(HOME_VAR, home),
+        None => std::env::remove_var(HOME_VAR),
     }
 }
 
