@@ -815,6 +815,7 @@ fn fifo(path: &Path) {
 /// parent's, after integration). A file written while it ran is named in
 /// its report, so its result is not read as judging the tree as it
 /// stands; a path written before it started is not.
+#[cfg(unix)] // A FIFO (mkfifo) holds the check open.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_check_names_the_paths_written_while_it_ran() {
     let dir = tempfile::tempdir().unwrap();
