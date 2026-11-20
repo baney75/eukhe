@@ -3,6 +3,8 @@
 //! survives cancelled waits, clients that hang up, and owner changes. Then
 //! the owner's own duties: free and model-built lines, the compactor's
 //! input and retries, zoom and date, reloads and takeovers.
+// Helpers used only by the tests gated to Unix below.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
 
 use std::fmt::Write as _;
 use std::future::Future;
@@ -626,6 +628,7 @@ fn long_chat_dir() -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf)
 /// A `lock` too long to name an endpoint still has one owner, at a short
 /// endpoint in the run dir, whose client reaches it and takes over when
 /// it goes.
+#[cfg(unix)] // A Unix socket path past the name limit, under /tmp.
 #[tokio::test]
 async fn a_chat_with_a_long_lock_path_has_one_reachable_owner() {
     let (_root, agent, dir) = long_chat_dir();
@@ -981,6 +984,7 @@ impl Summarizer for LosesTheLog {
 /// be read by then does not keep the node unbuilt. The old cap read the
 /// message again: the node stayed unbuilt and the waiting turn got an
 /// error.
+#[cfg(unix)] // Renames the open message log, which Windows refuses.
 #[tokio::test(start_paused = true)]
 async fn the_failure_cap_reads_nothing() {
     let dir = tempfile::tempdir().unwrap();

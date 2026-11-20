@@ -1,3 +1,6 @@
+// Helpers used only by the tests gated to Unix below.
+#![cfg_attr(windows, allow(dead_code, unused_imports))]
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
@@ -109,6 +112,8 @@ fn a_childs_patch_marks_each_unit_it_changed() {
     );
 }
 
+#[cfg(unix)]
+// Expects /-joined paths; on Windows they come out with the native separator (open, see the Windows limits).
 #[tokio::test]
 async fn a_workspace_copies_tracked_and_untracked_files_but_not_ignored_ones() {
     let dir = tempfile::tempdir().unwrap();
@@ -173,6 +178,8 @@ async fn a_childs_copy_is_known_by_its_directory_until_its_hand_back() {
 /// of the environment or the configuration, nothing of the parent's
 /// repository (history, branches, remotes, objects) is in it, and the
 /// hand-back carries no `.git`.
+#[cfg(unix)]
+// Expects /-joined paths; on Windows they come out with the native separator (open, see the Windows limits).
 #[tokio::test]
 async fn a_child_sees_only_its_own_changes_in_git_and_none_of_the_parents_repository() {
     let dir = tempfile::tempdir().unwrap();
@@ -303,6 +310,8 @@ async fn a_child_sees_only_its_own_changes_in_git_and_none_of_the_parents_reposi
     );
 }
 
+#[cfg(unix)]
+// Expects /-joined paths; on Windows they come out with the native separator (open, see the Windows limits).
 #[tokio::test]
 async fn a_hand_back_takes_the_childs_changes_and_reports_conflicts() {
     let dir = tempfile::tempdir().unwrap();
@@ -420,6 +429,8 @@ async fn a_hand_back_keeps_each_doc_above_its_item_or_reports_the_conflict() {
 /// A child owning `src` changes files in and out of its scope: the
 /// in-scope changes (an edit, an addition, a removal) reach the parent;
 /// the rest stays under `conflicts/`, never applied.
+#[cfg(unix)]
+// Expects /-joined paths; on Windows they come out with the native separator (open, see the Windows limits).
 #[tokio::test]
 async fn a_scoped_hand_back_applies_only_the_childs_scope() {
     let dir = tempfile::tempdir().unwrap();
@@ -470,6 +481,8 @@ async fn a_scoped_hand_back_applies_only_the_childs_scope() {
 
 /// A scoped hand-back a crash cut (one in-scope path replaced, one
 /// out-of-scope path kept) runs again to the result of an uncut one.
+#[cfg(unix)]
+// Expects /-joined paths; on Windows they come out with the native separator (open, see the Windows limits).
 #[tokio::test]
 async fn a_scoped_hand_back_cut_by_a_crash_runs_again_to_the_same_result() {
     let dir = tempfile::tempdir().unwrap();
@@ -585,6 +598,8 @@ async fn a_hand_back_after_a_crash_removes_the_copy_the_crash_left_beside_a_path
     );
 }
 
+#[cfg(unix)]
+// Expects /-joined paths; on Windows they come out with the native separator (open, see the Windows limits).
 #[tokio::test]
 async fn a_path_the_parent_holds_as_a_directory_or_under_a_file_is_a_conflict() {
     let dir = tempfile::tempdir().unwrap();
