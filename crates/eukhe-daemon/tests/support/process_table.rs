@@ -1,10 +1,12 @@
 //! Portable process-table probes for the e2e tests: liveness, parent links
-//! and command lines, the same on Linux and macOS. The census runs `ps`
-//! (`-A -ww -o pid=,ppid=,args=` means the same to procps and BSD `ps`), so
-//! no test reads `/proc` directly.
+//! and command lines, the same on Linux, macOS and Windows. The census
+//! runs `ps` on Unix (`-A -ww -o pid=,ppid=,args=` means the same to procps
+//! and BSD `ps`), so no test reads `/proc` directly; Windows has no `ps`,
+//! so there it reads the process table through sysinfo.
 
 #![allow(dead_code)] // each including test binary uses its own subset
 
+#[cfg(unix)]
 use std::process::Command;
 
 /// One process of the census.
@@ -25,6 +27,7 @@ impl ProcessRow {
 }
 
 /// Every process the host lists.
+#[cfg(unix)]
 pub fn snapshot() -> Vec<ProcessRow> {
     let output = Command::new("ps")
         .args(["-A", "-ww", "-o", "pid=,ppid=,args="])
@@ -42,6 +45,33 @@ pub fn snapshot() -> Vec<ProcessRow> {
                 ppid: parent,
                 args: fields.collect::<Vec<_>>().join(" "),
             })
+        })
+        .collect()
+}
+
+/// Every process the host lists, with the command line each one may be
+/// read for (another user's stays empty, as `ps` leaves it unreadable).
+#[cfg(windows)]
+pub fn snapshot() -> Vec<ProcessRow> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing().with_cmd(UpdateKind::Always),
+    );
+    system
+        .processes()
+        .iter()
+        .map(|(pid, process)| ProcessRow {
+            pid: pid.as_u32(),
+            ppid: process.parent().map_or(0, sysinfo::Pid::as_u32),
+            args: process
+                .cmd()
+                .iter()
+                .map(|arg| arg.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" "),
         })
         .collect()
 }
