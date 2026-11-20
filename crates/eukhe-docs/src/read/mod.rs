@@ -182,10 +182,13 @@ pub(crate) fn read_under(
             (located, split.path, split.selector)
         }
     };
-    let real_root = std::fs::canonicalize(&located.root).map_err(|source| ReadError::Io {
-        display: display_path(&located.root, cwd, home),
-        source,
-    })?;
+    // Through `resolve` as the path below, so both get one spelling.
+    let real_root = std::fs::canonicalize(&located.root)
+        .map(|real| resolve(&real).into_path())
+        .map_err(|source| ReadError::Io {
+            display: display_path(&located.root, cwd, home),
+            source,
+        })?;
     let real = std::fs::canonicalize(&located.path)
         .map(|real| resolve(&real))
         .map_err(|source| match source.kind() {

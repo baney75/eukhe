@@ -353,6 +353,9 @@ async fn run(
         });
     };
     running(&[]);
+    // Windows: a drop of this future (the session closed) ends the tree
+    // the Git Bash launcher started, not the launcher alone.
+    let mut tree = crate::platform::process::ProcessJob::contain(&child);
     let mut tail = Vec::new();
     let ended = tokio::time::timeout(config.timeout, async {
         keep_tail(stdout, &mut tail, config.progress_every, running).await?;
@@ -372,11 +375,13 @@ async fn run(
             if let Some(group) = child.id().and_then(|pid| i32::try_from(pid).ok()) {
                 let _gone = signal_process_group(group, Signal::Kill);
             }
+            tree.end();
             // Reaped so no zombie stays; the kill already ended it.
             let _reaped = child.wait().await;
             CheckOutcome::TimedOut
         }
     };
+    tree.release();
     let start = tail.len().saturating_sub(OUTPUT_TAIL_BYTES);
     (
         outcome,

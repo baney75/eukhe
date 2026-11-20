@@ -729,6 +729,9 @@ async fn run_bash(run: RunBash<'_>) -> BashEnd {
             Ok(child) => child,
             Err(error) => break 'run spawn_failure(error.into()),
         };
+        // Windows: the tree in a kill-on-close job, so an abort reaches
+        // what the Git Bash launcher started even if the launcher is gone.
+        let mut tree = eukhe_core::platform::process::ProcessJob::contain(&child);
         let group = child.id().and_then(|pid| i32::try_from(pid).ok());
         // The group is on the worker's journal while it runs, so the
         // supervisor kills it when this worker dies without its teardown.
@@ -778,6 +781,7 @@ async fn run_bash(run: RunBash<'_>) -> BashEnd {
                     // A group already gone has nothing left to kill.
                     let _ = eukhe_core::platform::process::kill_process_group_or_pid(group);
                 }
+                tree.end();
                 pumps.await;
             }
         }
@@ -792,9 +796,11 @@ async fn run_bash(run: RunBash<'_>) -> BashEnd {
                     // A group already gone has nothing left to kill.
                     let _ = eukhe_core::platform::process::kill_process_group_or_pid(group);
                 }
+                tree.end();
                 child.wait().await
             }
         };
+        tree.release();
         let exit_code = waited.ok().and_then(|status| status.code()).map(i64::from);
         let cancelled = user_bash.abort_requested.load(Ordering::SeqCst) || cancel.is_cancelled();
         let (output, bounded) = lock(&stream).output.projection();

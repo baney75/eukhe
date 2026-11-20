@@ -75,7 +75,14 @@ pub struct PeerRules {
 #[cfg(windows)]
 #[must_use]
 pub fn is_in_own_profile(dir: &std::path::Path) -> bool {
-    let Some(profile) = std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()) else {
+    let profile = {
+        #[cfg(test)]
+        let _env = super::dirs::ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        std::env::var_os("USERPROFILE")
+    };
+    let Some(profile) = profile.filter(|value| !value.is_empty()) else {
         return false;
     };
     match (std::fs::canonicalize(profile), std::fs::canonicalize(dir)) {

@@ -225,3 +225,44 @@ mod tests {
         child.wait().expect("wait");
     }
 }
+
+/// A child's process tree, held in a Job Object that ends every process in
+/// it when the job closes: the child is assigned right after its spawn, and
+/// whatever it starts joins the job too. Ending it ([`ProcessJob::end`], or
+/// a drop) kills the tree even when its root is already gone, which a
+/// `taskkill /T` of the root cannot reach.
+#[derive(Debug)]
+pub struct ProcessJob(Option<win32job::Job>);
+
+impl ProcessJob {
+    /// Put `child` in a new kill-on-close job. A child the job cannot take
+    /// (already gone, or a job error) gets an empty guard: the caller's
+    /// own kill still runs.
+    #[must_use]
+    pub fn contain(child: &tokio::process::Child) -> Self {
+        let job = child.raw_handle().and_then(|handle| {
+            let mut limits = win32job::ExtendedLimitInfo::new();
+            limits.limit_kill_on_job_close();
+            let job = win32job::Job::create_with_limit_info(&limits).ok()?;
+            // The handle is the child's own, borrowed for the call.
+            job.assign_process(handle as isize).ok()?;
+            Some(job)
+        });
+        Self(job)
+    }
+
+    /// End every process in the job now.
+    pub fn end(&mut self) {
+        self.0.take();
+    }
+
+    /// Let the tree outlive the guard, as a process group outlives its
+    /// leader's wait on Unix: the job stops killing on close first.
+    pub fn release(mut self) {
+        if let Some(job) = self.0.take() {
+            // A job whose limit stays set still closes: the tree then ends,
+            // the safe side of a failed release.
+            let _ = job.set_extended_limit_info(&win32job::ExtendedLimitInfo::new());
+        }
+    }
+}

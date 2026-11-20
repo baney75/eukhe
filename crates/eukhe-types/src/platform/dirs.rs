@@ -97,14 +97,16 @@ pub fn expand_tilde(path: &str) -> PathBuf {
     PathBuf::from(path)
 }
 
+/// Environment mutations are process-global: every test that sets one
+/// takes this lock and restores the previous values on exit, and a read of
+/// the profile ([`is_in_own_profile`](super::access::is_in_own_profile))
+/// takes it too, so no test sees another's stand-in home.
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    /// Environment mutations are process-global: every test takes this lock
-    /// and restores the previous values on exit.
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     /// Run `body` with the named variables set to the given values (`None`
     /// removes them), restoring the previous state afterwards.
@@ -201,6 +203,8 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    // Unix only: on Windows the agent dir is under %LOCALAPPDATA%, not the home.
     #[test]
     fn agent_dir_without_home_is_none() {
         with_env(

@@ -63,11 +63,16 @@ pub(crate) fn resolve_input_path(root: &Path, input: &str) -> PathBuf {
     }
 }
 
-/// Whether a metadata failure means the target does not exist.
+/// Whether a metadata failure means the target does not exist. A name no
+/// file can have is missing too: on Windows a glob such as `*.rs` is one
+/// (`ERROR_INVALID_NAME`, `InvalidFilename`).
 pub(crate) fn is_missing(error: &io::Error) -> bool {
     matches!(
         error.kind(),
-        io::ErrorKind::NotFound | io::ErrorKind::NotADirectory | io::ErrorKind::InvalidInput
+        io::ErrorKind::NotFound
+            | io::ErrorKind::NotADirectory
+            | io::ErrorKind::InvalidInput
+            | io::ErrorKind::InvalidFilename
     )
 }
 

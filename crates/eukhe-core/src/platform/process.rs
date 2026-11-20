@@ -27,7 +27,31 @@ pub use windows::{
     enter_requested_session, kill_pid, kill_process_group_or_pid, open_pidfd, pid_exists,
     pidfd_signal, process_group_id, raise_open_file_limit, release_startup_stderr,
     set_new_process_group, signal_process_group, termination_signal, wait_for_exit, ProcessHandle,
+    ProcessJob,
 };
+
+/// A child's process tree: on Unix its process group already holds it
+/// (the caller's group kill ends it), so the guard holds nothing.
+#[cfg(unix)]
+#[derive(Debug)]
+pub struct ProcessJob;
+
+#[cfg(unix)]
+impl ProcessJob {
+    /// Nothing to hold on Unix.
+    #[must_use]
+    pub fn contain(_child: &tokio::process::Child) -> Self {
+        Self
+    }
+
+    /// Nothing to end on Unix: the group kill did.
+    #[allow(clippy::unused_self)]
+    pub fn end(&mut self) {}
+
+    /// Nothing to release on Unix.
+    #[allow(clippy::unused_self)]
+    pub fn release(self) {}
+}
 
 /// The kernel-held handle of one process ([`open_pidfd`]).
 #[cfg(unix)]
