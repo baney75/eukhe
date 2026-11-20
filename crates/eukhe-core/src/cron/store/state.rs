@@ -616,6 +616,8 @@ mod tests {
             "the cron state write must keep its one opt-in fsync"
         );
         assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
+        // Unix mode bits; Windows has none.
+        #[cfg(unix)]
         assert_eq!(
             crate::platform::perms::file_mode(&path),
             Some(0o600),

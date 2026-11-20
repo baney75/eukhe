@@ -594,7 +594,8 @@ mod tests {
             })
             .unwrap();
         let path = dir.path().join("auth.json");
-        // Owner-only mode.
+        // Owner-only mode (Unix mode bits; Windows has none).
+        #[cfg(unix)]
         assert_eq!(crate::platform::perms::file_mode(&path), Some(0o600));
         let data = parse_storage_data(Some(&fs::read_to_string(&path).unwrap())).unwrap();
         assert!(data.credential("local-inference").is_some());
