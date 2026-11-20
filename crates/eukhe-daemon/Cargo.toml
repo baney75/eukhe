@@ -58,6 +58,12 @@ tokio = { workspace = true, features = ["test-util"] }
 # (pidfd, process groups) and waits on the pidfds.
 rustix = { version = "1", features = ["process", "event"] }
 
+[target.'cfg(windows)'.dev-dependencies]
+# The e2e process census (tests/support/process_table.rs) on Windows, which
+# has no `ps`: pids, parents and command lines. Already in the build through
+# eukhe-types; the same version and features. MIT.
+sysinfo = { version = "0.38", default-features = false, features = ["system"] }
+
 [[bin]]
 name = "eukhe-daemon"
 path = "src/main.rs"
